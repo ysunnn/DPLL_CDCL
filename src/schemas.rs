@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Value {
     Null,
     True,
