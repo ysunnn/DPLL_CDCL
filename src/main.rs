@@ -1,4 +1,4 @@
-use crate::schemas::{Formula, Variable, Value};
+use crate::schemas::{Formula, Variable, Value, Assignment};
 
 mod schemas;
 
@@ -16,7 +16,7 @@ fn find_unit(variables_indexes: Vec<usize>, variables: &Vec<Variable>) -> usize 
         current_index = index;
     }
     if counter == 1 {
-        return current_index;
+        return current_index + 1;
     }
     if counter > 1 {
         panic!("More than one unit found");
@@ -30,16 +30,22 @@ fn set_variable_true(variable: usize, formular: &mut Formula) {
     }
     let variable_index = variable - 1;
     formular.variables[variable_index].value = Value::True;
+
+    formular.assigment_stack.push(Assignment {
+        variable,
+        value: Value::True,
+    });
+
     for index in formular.variables[variable_index].negative_occurrences.iter() {
         let clause = &mut formular.clauses[(index - 1) as usize];
         // decrease the number of active literals in the clause
-        clause.active_literals -= 1;
-        if clause.active_literals == 1 {
+        clause.number_of_active_literals -= 1;
+        if clause.number_of_active_literals == 1 {
             // Add units to the queue for propagation
             let x: Vec<usize> = clause.literals.iter().map(|x| x.abs() as usize).collect();
             formular.units.push_back(find_unit(x, &formular.variables));
         }
-        if clause.active_literals == 0 {
+        if clause.number_of_active_literals == 0 {
             // set the clause to unsatisfiable
             // report conflict
         }
@@ -49,6 +55,17 @@ fn set_variable_true(variable: usize, formular: &mut Formula) {
         let clause = &mut formular.clauses[(index - 1) as usize];
         // set the clause to satisfied
         clause.satisfiable = true;
+    }
+}
+
+fn dpll(formula: &mut Formula) {
+    for variable_index in 0..formula.variables.len() {
+        // start by setting the first variable to true
+        set_variable_true(variable_index + 1, formula);
+        // propagate the units that have to be true now
+        while !formula.units.is_empty() {
+            set_variable_true(formula.units.pop_front().unwrap(), formula);
+        }
     }
 }
 
@@ -76,13 +93,15 @@ mod tests {
             clauses: vec![
                 Clause {
                     satisfiable: false,
+                    satisfied_by_variable: -1,
                     literals: vec![1, -2],
-                    active_literals: 2,
+                    number_of_active_literals: 2,
                 },
                 Clause {
                     satisfiable: false,
                     literals: vec![1],
-                    active_literals: 1,
+                    satisfied_by_variable: -1,
+                    number_of_active_literals: 1,
                 },
             ],
             variables,
@@ -91,8 +110,8 @@ mod tests {
         set_variable_true(1, &mut formular);
         assert_eq!(formular.variables[0].value, Value::True);
         assert_eq!(formular.variables[1].value, Value::Null);
-        assert_eq!(formular.clauses[0].active_literals, 2);
-        assert_eq!(formular.clauses[1].active_literals, 1);
+        assert_eq!(formular.clauses[0].number_of_active_literals, 2);
+        assert_eq!(formular.clauses[1].number_of_active_literals, 1);
         assert_eq!(formular.clauses[0].satisfiable, true);
         assert_eq!(formular.clauses[1].satisfiable, true);
     }
