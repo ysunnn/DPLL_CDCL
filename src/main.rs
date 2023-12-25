@@ -2,6 +2,13 @@ use crate::schemas::{Formula, Variable, Value, Assignment};
 
 mod schemas;
 
+/// Find the last not assign unit from a clause
+///
+/// [`variables_indexes`](Vec<usize>) is the list if variables from one clause.
+/// the numbers in the list should start with one the zero is not used. to as close on the DIMACS format.
+/// [`variables`](Vec<Variable>) is a list of all variables from the formula. this start with the index zero,
+/// where zero ist mapped to one and so one.
+/// the function panic's if there are more than one unset unit or if no unset units a found
 fn find_unit(variables_indexes: Vec<usize>, variables: &Vec<Variable>) -> usize {
     // Find the unit in the clause that is not yet set
     let mut counter = 0;
@@ -24,6 +31,15 @@ fn find_unit(variables_indexes: Vec<usize>, variables: &Vec<Variable>) -> usize 
     panic!("No unit found");
 }
 
+/// Set a Variable from the formula true.
+///
+/// [`variable`](usize) is the variable number/name (starts with 1)
+/// [`formular`](Formula) is the complete formula we want to solve
+///
+/// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
+/// For the negative occurrences the number of of active literals is reduced and if there is only one active literal in the
+/// clause we add the variables to the unit queue for unit propagation.
+/// TODO: report an conflict if there a 0 active literals in one clause, we need to backpropagation !
 fn set_variable_true(variable: usize, formular: &mut Formula) {
     if variable == 0 {
         panic!("Variable cannot be 0");
