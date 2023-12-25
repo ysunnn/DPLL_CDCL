@@ -106,6 +106,7 @@ mod tests {
             ],
             variables,
             units: VecDeque::new(),
+            assigment_stack: vec![],
         };
         set_variable_true(1, &mut formular);
         assert_eq!(formular.variables[0].value, Value::True);
@@ -137,7 +138,7 @@ mod tests {
             },
         ];
         let unit = find_unit(variables_indexes, &variables);
-        assert_eq!(unit, 2);
+        assert_eq!(unit, 3);
     }
 
     #[test]
