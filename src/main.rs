@@ -1,4 +1,4 @@
-use crate::schemas::{Formula, Variable, Value, Assignment};
+use crate::schemas::{Formula, Variable, Value, Assignment, AssigmentType};
 
 mod schemas;
 
@@ -40,7 +40,7 @@ fn find_unit(variables_indexes: Vec<usize>, variables: &Vec<Variable>) -> usize 
 /// For the negative occurrences the number of of active literals is reduced and if there is only one active literal in the
 /// clause we add the variables to the unit queue for unit propagation.
 /// TODO: report an conflict if there a 0 active literals in one clause, we need to backpropagation !
-fn set_variable_true(variable: usize, formular: &mut Formula) {
+fn set_variable_true(variable: usize, formular: &mut Formula, assigment: AssigmentType) {
     if variable == 0 {
         panic!("Variable cannot be 0");
     }
@@ -50,6 +50,7 @@ fn set_variable_true(variable: usize, formular: &mut Formula) {
     formular.assigment_stack.push(Assignment {
         variable,
         value: Value::True,
+        assigment_type: assigment,
     });
 
     for index in formular.variables[variable_index].negative_occurrences.iter() {
@@ -74,13 +75,45 @@ fn set_variable_true(variable: usize, formular: &mut Formula) {
     }
 }
 
+/// Undo the assigment of a variable for backtracking.
+/// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
+/// variable. We set the clause to not sat.
+/// for every negative occurrences in a clause we update the number of active literals by one.
+fn undo_assigment() {}
+
+/// Backtrack the forced assigment
+///
+/// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
+/// If we still got an Branched assigment we undo this as well empty our unit queue and set the variable to false.
+/// than we going back to normal and start with unit propagation and regular assignments.
+fn backtrack(formula: &mut Formula) -> i32 {
+    while let Some(&top) = formula.assigment_stack.last() {
+        // Check the last element (the top of the stack)
+        if top.assigment_type == AssigmentType::Forced {
+            // Pop the element if the condition is met
+            formula.assigment_stack.pop();
+            undo_assigment();
+        } else {
+            // unset the last branched variable
+            undo_assigment();
+            formula.units.clear();
+            // set last unset variable as not and forced because that the only possible solution a this point.
+            // return to unit propagation
+            return 1;
+        }
+    }
+    panic!("Unsat");
+}
+
 fn dpll(formula: &mut Formula) {
     for variable_index in 0..formula.variables.len() {
         // start by setting the first variable to true
-        set_variable_true(variable_index + 1, formula);
+        // Branching type because we decided freely to set this variable!
+        set_variable_true(variable_index + 1, formula, AssigmentType::Branching);
         // propagate the units that have to be true now
         while !formula.units.is_empty() {
-            set_variable_true(formula.units.pop_front().unwrap(), formula);
+            // Forced Assigment because of unit propagation !
+            set_variable_true(formula.units.pop_front().unwrap(), formula, AssigmentType::Forced);
         }
     }
 }
