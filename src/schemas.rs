@@ -7,6 +7,11 @@ pub enum Value {
     False,
 }
 
+pub enum AssigmentType{
+    Forced,
+    Branching
+}
+
 /// The clause struct
 ///
 /// Contains the list of [`literals`](Vec<i32>), the number of [`active_literals`](i32) and the [`satisfiable`](bool) flag.
@@ -35,6 +40,7 @@ pub struct Variable {
 pub struct Assignment {
     pub(crate) variable: usize,
     pub(crate) value: Value,
+    pub(crate) assigment_type: AssigmentType
 }
 
 /// The formula struct
