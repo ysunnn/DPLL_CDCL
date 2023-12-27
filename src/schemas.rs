@@ -6,10 +6,16 @@ pub enum Value {
     True,
     False,
 }
-
+#[derive(PartialEq)]
 pub enum AssigmentType{
     Forced,
     Branching
+}
+
+#[derive(PartialEq)]
+pub enum ResultType{
+    Conflict,
+    Success
 }
 
 /// The clause struct
@@ -18,7 +24,7 @@ pub enum AssigmentType{
 /// The [`satisfiable`](bool) flag is used to determine if the clause is satisfied.
 pub struct Clause {
     pub(crate) satisfiable: bool,
-    pub(crate) satisfied_by_variable: i32,
+    pub(crate) satisfied_by_variable: usize, // variable start with 1  index with 0
     pub(crate) literals: Vec<i32>,
     pub(crate) number_of_active_literals: i32,
 }
