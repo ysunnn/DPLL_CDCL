@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{VecDeque};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -6,16 +6,18 @@ pub enum Value {
     True,
     False,
 }
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AssigmentType{
     Forced,
     Branching,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ResultType{
     Conflict,
-    Success
+    Success,
+    Unsatisfiable,
+    Satisfiable,
 }
 
 /// The clause struct
@@ -26,7 +28,7 @@ pub enum ResultType{
 pub struct Clause {
     pub(crate) satisfiable: bool,
     pub(crate) satisfied_by_variable: usize, // variable start with 1  index with 0
-    pub(crate) literals: Vec<i32>,
+    pub(crate) literals: Vec<i16>,
     pub(crate) number_of_active_literals: u8,
 }
 
@@ -34,7 +36,7 @@ pub struct Clause {
 ///
 /// Contains the value of the variable and the list of clauses where it occurs.
 /// The list of clauses is split into [`positive`](Vec<i32>) and [`negative`](Vec<i32>) occurrences.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Variable {
     pub(crate) value: Value,
     pub(crate) positive_occurrences: Vec<usize>,
@@ -45,10 +47,9 @@ pub struct Variable {
 ///
 /// Contains the variable and the value that was assigned to it.
 /// This struct is used to store the assignments in the [`assigment_stack`](Vec<Assignment>).
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Assignment {
     pub(crate) variable: usize,
-    pub(crate) value: Value,
     pub(crate) assigment_type: AssigmentType
 }
 
@@ -56,9 +57,10 @@ pub struct Assignment {
 ///
 /// Combines the list of [`clauses`](Clause) and the list of [`variables`](Variable).
 /// it also contains a [`units`](VecDeque) of units that need to be propagated.
+#[derive(Debug)]
 pub struct Formula {
     pub(crate) clauses: Vec<Clause>,
     pub(crate) variables: Vec<Variable>,
-    pub(crate) units: VecDeque<usize>,
+    pub(crate) units: VecDeque<i16>,
     pub(crate) assigment_stack: Vec<Assignment>,
 }
