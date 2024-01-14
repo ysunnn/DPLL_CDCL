@@ -2,12 +2,12 @@
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-use std::collections::VecDeque;
 use log::{debug};
-use crate::schemas::{Formula, Value, Assignment, AssigmentType, ResultType, Variable, Clause};
+use crate::schemas::{Formula, Value, Assignment, AssigmentType, ResultType, Variable};
 
 
 mod schemas;
+mod reader;
 
 /// Find the last not assign unit from a clause
 ///
@@ -256,6 +256,9 @@ fn dpll(formula: &mut Formula) -> ResultType {
 }
 
 fn main() {
+    let mut formula = Formula::read_formula("data/simple.txt").unwrap();
+    dbg!(&formula);//println!("{:?}", formula);
+
     #[cfg(feature = "dhat-heap")]
         let _profiler = dhat::Profiler::new_heap();
     // x = 1, a= 2, b = 3, c = 4, d = 5, e = 6, f = 7
@@ -265,6 +268,7 @@ fn main() {
     // -b or -c or d
     // -c or -d or e or f
     // c or d or -e
+    /*
     let mut formula = Formula {
         clauses: vec![
             // -x or a
@@ -357,6 +361,7 @@ fn main() {
         units: VecDeque::new(),
         assigment_stack: vec![],
     };
+     */
     // a, b ,c
     // -a or -b or c
     // a or -b or c
@@ -410,7 +415,7 @@ fn main() {
     };*/
     dpll(&mut formula);
     for clause in formula.clauses.iter() {
-        println!("Clause: {:?}", clause);
+        println!("{:?}", clause);
         if !clause.satisfiable {
             panic!("Unsat")
         }
