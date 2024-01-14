@@ -2,8 +2,11 @@
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+use std::fs;
+use std::time::Instant;
 use log::{debug};
 use crate::schemas::{Formula, Value, Assignment, AssigmentType, ResultType, Variable};
+use crate::schemas::ResultType::Satisfiable;
 
 
 mod schemas;
@@ -144,12 +147,11 @@ fn undo_assignment(variable: usize, formula: &mut Formula) {
 /// If we still got an Branched assigment we undo this as well empty our unit queue and set the variable to false.
 /// than we going back to normal and start with unit propagation and regular assignments.
 fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
-
     let mut num_of_undones = 0;
     while let Some(top) = formula.assigment_stack.pop() {
         // Check the last element (the top of the stack)
         match top.assigment_type {
-            AssigmentType::Branching =>{
+            AssigmentType::Branching => {
                 // unset the last branched variable
                 undo_assignment(top.variable, formula);
                 formula.units.clear();
@@ -162,7 +164,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
                         debug!(target: "backtrack", "Unset variable: {}", top.variable);
                         return Err(ResultType::Unsatisfiable);
                     }
-                    _ => {panic!("Invalid result")}
+                    _ => { panic!("Invalid result") }
                 }
             }
             AssigmentType::Forced => {
@@ -179,7 +181,6 @@ fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
 }
 
 fn dpll(formula: &mut Formula) -> ResultType {
-    
     let mut variable_index = 0;
     while variable_index < formula.variables.len() {
         // TODO: there must be a better way
@@ -212,7 +213,7 @@ fn dpll(formula: &mut Formula) -> ResultType {
 
         variable_index += 1;
         // propagate the units that have to be true now
-        while let Some(unit) =  formula.units.pop_front() {
+        while let Some(unit) = formula.units.pop_front() {
             // Forced Assigment because of unit propagation !
             //let unit = formula.units.pop_front().unwrap();
             if formula.variables[(unit.abs() - 1) as usize].value != Value::Null {
@@ -251,174 +252,43 @@ fn dpll(formula: &mut Formula) -> ResultType {
         let variable = &formula.variables[variable_index];
         debug!("{}: {:?} ", variable_index + 1, variable.value);
     }
-    
+
     return ResultType::Satisfiable;
 }
 
 fn main() {
-    let mut formula = Formula::read_formula("data/simple.txt").unwrap();
-    dbg!(&formula);//println!("{:?}", formula);
+    let paths = fs::read_dir("data/inputs/test/sat").unwrap();
 
-    #[cfg(feature = "dhat-heap")]
-        let _profiler = dhat::Profiler::new_heap();
-    // x = 1, a= 2, b = 3, c = 4, d = 5, e = 6, f = 7
-    // -x or a
-    // -x or b
-    // -a or c
-    // -b or -c or d
-    // -c or -d or e or f
-    // c or d or -e
-    /*
-    let mut formula = Formula {
-        clauses: vec![
-            // -x or a
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-1, 2],
-                number_of_active_literals: 2,
-            },
-            // -x or b
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-1, 3],
-                number_of_active_literals: 2,
-            },
-            // -a or c
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-2, 4],
-                number_of_active_literals: 2,
-            },
-            // -b or -c or d
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-3, -4, 5],
-                number_of_active_literals: 3,
-            },
-            // -c or -d or e or f
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-4, -5, 6, 7],
-                number_of_active_literals: 4,
-            },
-            // -c or -d or -e
-            Clause {
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-4, -5, -6],
-                number_of_active_literals: 3,
-            },
-        ],
-        variables: vec![
-            // X
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![],
-                negative_occurrences: vec![0, 1],
-            },
-            // A
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![0],
-                negative_occurrences: vec![2],
-            },
-            // B
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![1],
-                negative_occurrences: vec![3],
-            },
-            // C
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![2],
-                negative_occurrences: vec![3, 4, 5],
-            },
-            // D
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![3],
-                negative_occurrences: vec![4, 5],
-            },
-            // E
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![4],
-                negative_occurrences: vec![5],
-            },
-            // F
-            Variable {
-                value: Value::Null,
-                positive_occurrences: vec![4],
-                negative_occurrences: vec![],
-            },
-        ],
-        units: VecDeque::new(),
-        assigment_stack: vec![],
-    };
-     */
-    // a, b ,c
-    // -a or -b or c
-    // a or -b or c
-    // a or -b or -c
-    /*let mut formula = Formula{
-        clauses: vec![
-            // -a or -b or c
-            Clause{
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![-1, -2, -3],
-                number_of_active_literals: 3,
-            },
-            // a or -b or -c
-            Clause{
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![1, -2, -3],
-                number_of_active_literals: 3,
-            },
-            // a or -b or -c
-            Clause{
-                satisfiable: false,
-                satisfied_by_variable: 0,
-                literals: vec![1, -2, -3],
-                number_of_active_literals: 3,
-            },
-        ],
-        variables: vec![
-            // A
-            Variable{
-                value: Value::Null,
-                positive_occurrences: vec![1, 2],
-                negative_occurrences: vec![0],
-            },
-            // B
-            Variable{
-                value: Value::Null,
-                positive_occurrences: vec![],
-                negative_occurrences: vec![0, 1, 2],
-            },
-            // C
-            Variable{
-                value: Value::Null,
-                positive_occurrences: vec![],
-                negative_occurrences: vec![0, 1,2],
-            },
-        ],
-        units: VecDeque::new(),
-        assigment_stack: vec![],
-    };*/
-    dpll(&mut formula);
-    for clause in formula.clauses.iter() {
-        println!("{:?}", clause);
-        if !clause.satisfiable {
-            panic!("Unsat")
+    for path in paths {
+        let p = path.unwrap().path();
+        println!("Name: {}", p.display());
+
+        let mut formula = Formula::from_file(&p).unwrap();
+
+        #[cfg(feature = "dhat-heap")]
+            let _profiler = dhat::Profiler::new_heap();
+
+        let start = Instant::now();
+
+        if dpll(&mut formula) == Satisfiable {
+            println!("s SATISFIABLE");
+            print!("v");
+            for variable_index in 0..formula.variables.len() {
+                let vars: i32;
+                if formula.variables[variable_index].value == Value::True {
+                    vars = (variable_index + 1) as i32
+                } else {
+                    vars = -((variable_index + 1) as i32)
+                }
+                print!(" {}", vars);
+            }
+            println!();
+        } else {
+            println!("s UNSATISFIABLE");
         }
+
+        let duration = start.elapsed();
+        println!("Time elapsed in expensive_function() is: {:?}", duration);
     }
 }
 
@@ -516,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_find_unit_more_clauses() {
-        let variables_indexes:Vec<i16>= vec![1, 2, 3];
+        let variables_indexes: Vec<i16> = vec![1, 2, 3];
         let variables = vec![
             Variable {
                 value: Value::Null,
@@ -561,7 +431,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_find_unit_no_clauses() {
-        let variables_indexes:Vec<i16> = vec![1, 2, 3];
+        let variables_indexes: Vec<i16> = vec![1, 2, 3];
         let variables = vec![
             Variable {
                 value: Value::False,
