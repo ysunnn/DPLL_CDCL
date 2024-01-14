@@ -4,5 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev]
+debug = true
+strip = false
+
+
+[profile.release]
+#debug = true
+#strip = false
+opt-level = 3
+
+
+
+[features]
+dhat-heap = []    # if you are doing heap profiling
+dhat-ad-hoc = []  # if you are doing ad hoc profiling
+
 
 [dependencies]
+log = { version = "0.4", features = ["std", "serde"] }
+env_logger = "0.10.1"
+dhat = "0.3.2"
