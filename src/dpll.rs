@@ -328,7 +328,12 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         debug!("{}: {:?} ", variable_index + 1, variable.value);
     }
 
-    formula.result = FormulaResultType::Satisfiable;
+
+    if formula.is_solved() {
+        formula.result = FormulaResultType::Satisfiable;
+        return;
+    }
+    formula.result = FormulaResultType::Unsatisfiable;
     return;
 }
 
