@@ -248,7 +248,7 @@ fn pure_literal_elimination(formula: &mut Formula) -> ResultType {
     return ResultType::Success;
 }
 
-pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
+pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut variable_index = 0;
 
     unit_propagation(formula);
@@ -257,7 +257,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
         ResultType::Success => {}
         ResultType::Conflict => {
             error!(target: "dpll", "Pure literal elimination failed");
-            return ResultType::Unsatisfiable;
+            formula.result= ResultType::Unsatisfiable;
+            return;
         }
         _ => {
             panic!("Invalid result")
@@ -273,7 +274,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
             continue;
         }
         if timeout.load(Ordering::SeqCst) {
-            return ResultType::Timeout;
+            formula.result= ResultType::Timeout;
+            return;
         }
         // start by setting the first variable to true
         // Branching type because we decided freely to set this variable!
@@ -290,8 +292,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
                     }
                 }
                 Err(result) => {
-                    error!(target: "dpll", "Backtrack 1 failed: {:?}", result);
-                    return result;
+                    formula.result= result;
+                    return;
                 }
             }
         }
@@ -327,8 +329,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
                     }
                 }
                 Err(result) => {
-                    error!(target: "dpll", "Backtrack 2 failed: {:?}", result);
-                    return result;
+                    formula.result=  result;
+                    return;
                 }
             }
         }
@@ -338,13 +340,14 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) -> ResultType {
         debug!("{}: {:?} ", variable_index + 1, variable.value);
     }
 
-    return ResultType::Satisfiable;
+    formula.result=  ResultType::Satisfiable;
+    return;
 }
 
 #[cfg(test)]
 mod tests {
     use crate::dpll::{find_unit, set_variable_true};
-    use crate::schemas::{AssigmentType, Clause, Formula, Value, Variable};
+    use crate::schemas::{AssigmentType, Clause, Formula, ResultType, Value, Variable};
     use std::collections::VecDeque;
 
     #[test]
@@ -379,6 +382,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
+            result: ResultType::Null,
         };
         set_variable_true(1, &mut formular, AssigmentType::Branching);
         assert_eq!(formular.variables[0].value, Value::True);
@@ -427,6 +431,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
+            result: ResultType::Null,
         };
         let unit = find_unit(&variables_indexes, &formula.variables);
         assert_eq!(unit, 3);
@@ -471,6 +476,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
+            result: ResultType::Null,
         };
 
         let _ = find_unit(&variables_indexes, &formula.variables);
@@ -502,6 +508,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
+            result: ResultType::Null,
         };
         let _ = find_unit(&variables_indexes, &formula.variables);
     }

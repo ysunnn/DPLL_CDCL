@@ -1,4 +1,4 @@
-use crate::schemas::{Clause, Formula, Value, Variable};
+use crate::schemas::{Clause, Formula, ResultType, Value, Variable};
 use log::warn;
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
@@ -103,14 +103,12 @@ impl Formula {
             return Err("file is empty");
         }
 
-        let units = VecDeque::new();
-        let assigment_stack = Vec::with_capacity(variables.len());
-
         Ok(Self {
+            assigment_stack:Vec::with_capacity(variables.len()),
             clauses,
             variables,
-            units,
-            assigment_stack,
+            units:VecDeque::new(),
+            result:ResultType::Null,
         })
     }
 }

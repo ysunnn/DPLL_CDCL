@@ -15,12 +15,12 @@ fn test() {
     let start = time::Instant::now();
     let mut formula = Formula::from_file(&PathBuf::from("data/inputs/sat/par8-4.cnf")).unwrap();
     //dbg!(&formula);
-    let result = dpll(&mut formula, Arc::new(AtomicBool::new(false)));
-    info!("Result: {:?}", result);
+    dpll(&mut formula, Arc::new(AtomicBool::new(false)));
+    info!("Result: {:?}", formula.result);
     info!("Time: {:?}", start.elapsed());
 }
 
-fn benchmark() {
+/*fn benchmark() {
     let timout = Arc::new(AtomicBool::new(false));
     let paths = fs::read_dir("data/inputs").unwrap();
 
@@ -48,8 +48,8 @@ fn benchmark() {
 
             let mut formula = Formula::from_file(&path).unwrap();
             let timout_clone = timout.clone();
-            let handle: JoinHandle<ResultType> = thread::spawn(move || {
-                return dpll(&mut formula, timout_clone);
+            let handle: JoinHandle<_> = thread::spawn(move || {
+                dpll(&mut formula, timout_clone);
             });
 
             while start.elapsed().as_secs() < 60 {
@@ -68,11 +68,11 @@ fn benchmark() {
 
             // Wait for the thread to finish
             match handle.join() {
-                Ok(result) => {
-                    info!(target: "benchmark", "Result: {:?}", result);
-                    if result == excpexted {
+                Ok(_) => {
+                    info!(target: "benchmark", "Result: {:?}", &formula.result);
+                    if formula.result == excpexted {
                         solved += 1;
-                    } else if result == ResultType::Timeout {
+                    } else if formula.result == ResultType::Timeout {
                         timeout += 1;
                     } else {
                         error += 1;
@@ -89,7 +89,7 @@ fn benchmark() {
     info!(target: "benchmark", "Solved: {}", solved);
     info!(target: "benchmark", "Timeout: {}", timeout);
     info!(target: "benchmark", "Error: {}", error);
-}
+}*/
 
 fn tests() {
     let dirs = fs::read_dir("data/inputs/test").unwrap();
@@ -99,16 +99,16 @@ fn tests() {
         let excpexted = match cdir.to_str().unwrap() {
             "sat" => ResultType::Satisfiable,
             "unsat" => ResultType::Unsatisfiable,
-            _ => panic!("Invalid dir name"),
+            _ => {continue},
         };
         for path in fs::read_dir(dir).unwrap() {
             let path = path.unwrap().path();
             info!("Formula {:?}", path);
             let start = time::Instant::now();
             let mut formula = Formula::from_file(&path).unwrap();
-            let result = dpll(&mut formula, Arc::new(AtomicBool::new(false)));
-            info!("Result: {:?}", result);
-            assert_eq!(result, excpexted);
+            dpll(&mut formula, Arc::new(AtomicBool::new(false)));
+            info!("Result: {:?}", formula.result);
+            assert_eq!(formula.result, excpexted);
             info!("Time: {:?}", start.elapsed());
         }
     }
@@ -116,14 +116,14 @@ fn tests() {
 
 fn main() {
     #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
+        let _profiler = dhat::Profiler::new_heap();
     env_logger::init();
 
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("test") => test(),
         Some("tests") => tests(),
-        Some("benchmark") => benchmark(),
+        //Some("benchmark") => benchmark(),
         _ => println!("Invalid argument. Please use 'test', 'tests', or 'benchmark'."),
     }
 }

@@ -15,6 +15,7 @@ pub enum AssigmentType {
 
 #[derive(PartialEq, Debug)]
 pub enum ResultType {
+    Null,
     Conflict,
     Success,
     Unsatisfiable,
@@ -84,4 +85,5 @@ pub struct Formula {
     pub(crate) variables: Vec<Variable>,
     pub(crate) units: VecDeque<i16>,
     pub(crate) assigment_stack: Vec<Assignment>,
+    pub(crate) result: ResultType,
 }
