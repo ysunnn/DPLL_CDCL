@@ -1,4 +1,4 @@
-use crate::schemas::{Clause, Formula, Value, Variable};
+use crate::schemas::{Clause, Formula, FormulaResultType, Value, Variable};
 use log::warn;
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
@@ -103,14 +103,31 @@ impl Formula {
             return Err("file is empty");
         }
 
-        let units = VecDeque::new();
-        let assigment_stack = Vec::with_capacity(variables.len());
-
         Ok(Self {
+            assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
             variables,
-            units,
-            assigment_stack,
+            units: VecDeque::new(),
+            result: FormulaResultType::Unknown,
         })
+    }
+
+    pub fn write_solution(&self) -> String {
+        let solution = match self.result {
+            FormulaResultType::Satisfiable => {
+                let literals: Vec<String> = self.variables.iter().enumerate().map(|(index, var)| {
+                    if var.value == Value::True {
+                        (index + 1).to_string()
+                    } else {
+                        (-((index + 1) as i32)).to_string()
+                    }
+                }).collect();
+                format!("s SATISFIABLE\nv {}", literals.join(" "))
+            }
+            FormulaResultType::Unsatisfiable => "s UNSATISFIABLE".to_string(),
+            FormulaResultType::Timeout => "s UNKNOWN\nc Timeout".to_string(),
+            _ => "s UNKNOWN".to_string(),
+        };
+        solution
     }
 }
