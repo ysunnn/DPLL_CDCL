@@ -1,4 +1,4 @@
-use std::collections::{VecDeque};
+use std::collections::VecDeque;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -6,18 +6,26 @@ pub enum Value {
     True,
     False,
 }
+
 #[derive(PartialEq, Clone, Copy, Debug)]
-pub enum AssigmentType{
+pub enum AssigmentType {
     Forced,
     Branching,
 }
 
 #[derive(PartialEq, Debug)]
-pub enum ResultType{
+pub enum ResultType {
     Conflict,
     Success,
     Unsatisfiable,
     Satisfiable,
+    Timeout,
+}
+
+#[derive(Debug)]
+pub enum PureType {
+    Positive,
+    Negative,
 }
 
 /// The clause struct
@@ -27,7 +35,8 @@ pub enum ResultType{
 #[derive(Debug)]
 pub struct Clause {
     pub(crate) satisfiable: bool,
-    pub(crate) satisfied_by_variable: usize, // variable start with 1  index with 0
+    pub(crate) satisfied_by_variable: usize,
+    // variable start with 1  index with 0
     pub(crate) literals: Vec<i16>,
     pub(crate) number_of_active_literals: u8,
 }
@@ -43,6 +52,18 @@ pub struct Variable {
     pub(crate) negative_occurrences: Vec<usize>,
 }
 
+impl Variable {
+    pub(crate) fn is_pure(&self) -> Option<PureType> {
+        if self.positive_occurrences.is_empty() {
+            Some(PureType::Negative)
+        } else if self.negative_occurrences.is_empty() {
+            Some(PureType::Positive)
+        } else {
+            None
+        }
+    }
+}
+
 /// The assignment struct
 ///
 /// Contains the variable and the value that was assigned to it.
@@ -50,7 +71,7 @@ pub struct Variable {
 #[derive(Copy, Clone, Debug)]
 pub struct Assignment {
     pub(crate) variable: usize,
-    pub(crate) assigment_type: AssigmentType
+    pub(crate) assigment_type: AssigmentType,
 }
 
 /// The formula struct
