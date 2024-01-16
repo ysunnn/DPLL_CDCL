@@ -1,5 +1,5 @@
 use crate::schemas::{AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable};
-use log::{debug, error, info};
+use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -73,6 +73,7 @@ fn set_variable(
         }
         clause.satisfiable = true;
         clause.satisfied_by_variable = variable;
+        formula.number_of_unsatisfied_clauses -= 1;
     }
 
     for &index in negative_occurrences {
@@ -156,6 +157,7 @@ fn undo_assignment(variable: usize, formula: &mut Formula) {
         if clause.satisfied_by_variable == variable {
             clause.satisfiable = false;
             clause.satisfied_by_variable = 0;
+            formula.number_of_unsatisfied_clauses += 1;
         }
     }
 
@@ -189,9 +191,6 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
                         if formula.assigment_stack.is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
-                    }
-                    _ => {
-                        panic!("Invalid result")
                     }
                 }
             }
@@ -237,9 +236,6 @@ fn pure_literal_elimination(formula: &mut Formula) {
                         formula.result = FormulaResultType::Unsatisfiable;
                         return;
                     }
-                    _ => {
-                        panic!("Invalid result")
-                    }
                 }
             }
             None => {}
@@ -268,6 +264,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             formula.result = FormulaResultType::Timeout;
             return;
         }
+        assert_eq!(formula.number_of_unsatisfied_clauses, formula.clauses.iter().filter(|&c| !c.satisfiable).count() as i16);
         // start by setting the first variable to true
         // Branching type because we decided freely to set this variable!
         // theoretically can we ignore the result is the set variable true here, because a conflict can only occur if
@@ -373,6 +370,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
+            number_of_unsatisfied_clauses: 0,
             result: FormulaResultType::Unknown,
         };
         set_variable_true(1, &mut formular, AssigmentType::Branching);
@@ -423,6 +421,7 @@ mod tests {
             units: VecDeque::new(),
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
+            number_of_unsatisfied_clauses: 0,
         };
         let unit = find_unit(&variables_indexes, &formula.variables);
         assert_eq!(unit, 3);
@@ -468,6 +467,7 @@ mod tests {
             units: VecDeque::new(),
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
+            number_of_unsatisfied_clauses: 0,
         };
 
         let _ = find_unit(&variables_indexes, &formula.variables);
@@ -500,6 +500,7 @@ mod tests {
             units: VecDeque::new(),
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
+            number_of_unsatisfied_clauses: 0,
         };
         let _ = find_unit(&variables_indexes, &formula.variables);
     }

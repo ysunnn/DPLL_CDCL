@@ -13,7 +13,7 @@ pub enum AssigmentType {
     Branching,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum ResultType {
     Conflict,
     Success,
@@ -90,4 +90,12 @@ pub struct Formula {
     pub(crate) units: VecDeque<i16>,
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
+    pub(crate) number_of_unsatisfied_clauses: i16,
+}
+
+impl Formula {
+
+    pub fn is_solved(&self) -> bool {
+        return self.number_of_unsatisfied_clauses == 0;
+    }
 }

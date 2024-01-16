@@ -104,6 +104,7 @@ impl Formula {
         }
 
         Ok(Self {
+            number_of_unsatisfied_clauses: clauses.len() as i16,
             assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
             variables,
