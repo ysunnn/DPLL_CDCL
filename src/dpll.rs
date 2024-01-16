@@ -1,4 +1,4 @@
-use crate::schemas::{AssigmentType, Assignment, Formula, PureType, ResultType, Value, Variable};
+use crate::schemas::{AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable};
 use log::{debug, error, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -170,7 +170,7 @@ fn undo_assignment(variable: usize, formula: &mut Formula) {
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
 /// If we still got an Branched assigment we undo this as well empty our unit queue and set the variable to false.
 /// than we going back to normal and start with unit propagation and regular assignments.
-fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
+fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
     let mut num_of_undones = 0;
     while let Some(top) = formula.assigment_stack.pop() {
         // Check the last element (the top of the stack)
@@ -187,9 +187,8 @@ fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
                     ResultType::Conflict => {
                         debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable);
                         if formula.assigment_stack.is_empty() {
-                            return Err(ResultType::Unsatisfiable);
+                            return Err(FormulaResultType::Unsatisfiable);
                         }
-                        //return Err(ResultType::Unsatisfiable);
                     }
                     _ => {
                         panic!("Invalid result")
@@ -206,7 +205,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, ResultType> {
         }
     }
     info!(target: "backtrack", "Backtrack finished");
-    return Err(ResultType::Unsatisfiable);
+    return Err(FormulaResultType::Unsatisfiable);
 }
 
 fn unit_propagation(formula: &mut Formula) {
@@ -222,7 +221,7 @@ fn unit_propagation(formula: &mut Formula) {
 /// Eliminate pure literals
 /// A pure literal is a variable that only occurs positive or negative in the formula.
 /// If we find a pure literal we set the variable to the value that is needed to satisfy the formula.
-fn pure_literal_elimination(formula: &mut Formula) -> ResultType {
+fn pure_literal_elimination(formula: &mut Formula) {
     for variable_index in 0..formula.variables.len() {
         let variable = &formula.variables[variable_index];
         match variable.is_pure() {
@@ -235,7 +234,8 @@ fn pure_literal_elimination(formula: &mut Formula) -> ResultType {
                 match set_variable(variable_index + 1, formula, AssigmentType::Branching, value) {
                     ResultType::Success => {}
                     ResultType::Conflict => {
-                        return ResultType::Unsatisfiable;
+                        formula.result = FormulaResultType::Unsatisfiable;
+                        return;
                     }
                     _ => {
                         panic!("Invalid result")
@@ -245,24 +245,15 @@ fn pure_literal_elimination(formula: &mut Formula) -> ResultType {
             None => {}
         }
     }
-    return ResultType::Success;
 }
 
 pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut variable_index = 0;
 
     unit_propagation(formula);
-
-    match pure_literal_elimination(formula) {
-        ResultType::Success => {}
-        ResultType::Conflict => {
-            error!(target: "dpll", "Pure literal elimination failed");
-            formula.result= ResultType::Unsatisfiable;
-            return;
-        }
-        _ => {
-            panic!("Invalid result")
-        }
+    pure_literal_elimination(formula);
+    if formula.result == FormulaResultType::Unsatisfiable {
+        return;
     }
 
     while variable_index < formula.variables.len() {
@@ -274,7 +265,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             continue;
         }
         if timeout.load(Ordering::SeqCst) {
-            formula.result= ResultType::Timeout;
+            formula.result = FormulaResultType::Timeout;
             return;
         }
         // start by setting the first variable to true
@@ -292,7 +283,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                     }
                 }
                 Err(result) => {
-                    formula.result= result;
+                    formula.result = result;
                     return;
                 }
             }
@@ -329,7 +320,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                     }
                 }
                 Err(result) => {
-                    formula.result=  result;
+                    formula.result = result;
                     return;
                 }
             }
@@ -340,14 +331,14 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         debug!("{}: {:?} ", variable_index + 1, variable.value);
     }
 
-    formula.result=  ResultType::Satisfiable;
+    formula.result = FormulaResultType::Satisfiable;
     return;
 }
 
 #[cfg(test)]
 mod tests {
     use crate::dpll::{find_unit, set_variable_true};
-    use crate::schemas::{AssigmentType, Clause, Formula, ResultType, Value, Variable};
+    use crate::schemas::{AssigmentType, Clause, Formula, FormulaResultType, Value, Variable};
     use std::collections::VecDeque;
 
     #[test]
@@ -382,7 +373,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
-            result: ResultType::Null,
+            result: FormulaResultType::Unknown,
         };
         set_variable_true(1, &mut formular, AssigmentType::Branching);
         assert_eq!(formular.variables[0].value, Value::True);
@@ -431,7 +422,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
-            result: ResultType::Null,
+            result: FormulaResultType::Unknown,
         };
         let unit = find_unit(&variables_indexes, &formula.variables);
         assert_eq!(unit, 3);
@@ -476,7 +467,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
-            result: ResultType::Null,
+            result: FormulaResultType::Unknown,
         };
 
         let _ = find_unit(&variables_indexes, &formula.variables);
@@ -508,7 +499,7 @@ mod tests {
             variables,
             units: VecDeque::new(),
             assigment_stack: vec![],
-            result: ResultType::Null,
+            result: FormulaResultType::Unknown,
         };
         let _ = find_unit(&variables_indexes, &formula.variables);
     }

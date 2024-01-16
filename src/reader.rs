@@ -1,4 +1,4 @@
-use crate::schemas::{Clause, Formula, ResultType, Value, Variable};
+use crate::schemas::{Clause, Formula, FormulaResultType, Value, Variable};
 use log::warn;
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
@@ -104,11 +104,11 @@ impl Formula {
         }
 
         Ok(Self {
-            assigment_stack:Vec::with_capacity(variables.len()),
+            assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
             variables,
-            units:VecDeque::new(),
-            result:ResultType::Null,
+            units: VecDeque::new(),
+            result: FormulaResultType::Unknown,
         })
     }
 }

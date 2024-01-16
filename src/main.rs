@@ -1,5 +1,5 @@
 use crate::dpll::dpll;
-use crate::schemas::{Formula, ResultType};
+use crate::schemas::{Formula, FormulaResultType};
 use log::{error, info};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,9 +97,9 @@ fn tests() {
         let dir = dir.unwrap().path();
         let cdir = dir.file_name().unwrap();
         let excpexted = match cdir.to_str().unwrap() {
-            "sat" => ResultType::Satisfiable,
-            "unsat" => ResultType::Unsatisfiable,
-            _ => {continue},
+            "sat" => FormulaResultType::Satisfiable,
+            "unsat" => FormulaResultType::Unsatisfiable,
+            _ => { continue; }
         };
         for path in fs::read_dir(dir).unwrap() {
             let path = path.unwrap().path();
