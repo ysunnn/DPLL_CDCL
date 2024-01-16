@@ -10,8 +10,8 @@ strip = false
 
 
 [profile.release]
-#debug = true
-#strip = false
+debug = true
+strip = false
 opt-level = 3
 
 
@@ -19,6 +19,7 @@ opt-level = 3
 [features]
 dhat-heap = []    # if you are doing heap profiling
 dhat-ad-hoc = []  # if you are doing ad hoc profiling
+time = []  # if you are doing ad hoc profiling
 
 
 [dependencies]
