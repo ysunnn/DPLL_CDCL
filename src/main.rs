@@ -8,7 +8,7 @@ use std::thread::JoinHandle;
 use std::{fs, thread, time};
 
 mod dpll;
-mod reader;
+mod dimacs_converter;
 mod schemas;
 
 fn test() {
@@ -107,7 +107,7 @@ fn tests() {
             let start = time::Instant::now();
             let mut formula = Formula::from_file(&path).unwrap();
             dpll(&mut formula, Arc::new(AtomicBool::new(false)));
-            info!("Result: {:?}", formula.result);
+            info!("Result: {}", Formula::write_solution(&formula));
             assert_eq!(formula.result, excpexted);
             info!("Time: {:?}", start.elapsed());
         }

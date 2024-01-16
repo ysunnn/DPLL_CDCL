@@ -111,4 +111,23 @@ impl Formula {
             result: FormulaResultType::Unknown,
         })
     }
+
+    pub fn write_solution(&self) -> String {
+        let solution = match self.result {
+            FormulaResultType::Satisfiable => {
+                let literals: Vec<String> = self.variables.iter().enumerate().map(|(index, var)| {
+                    if var.value == Value::True {
+                        (index + 1).to_string()
+                    } else {
+                        (-((index + 1) as i32)).to_string()
+                    }
+                }).collect();
+                format!("s SATISFIABLE\nv {}", literals.join(" "))
+            }
+            FormulaResultType::Unsatisfiable => "s UNSATISFIABLE".to_string(),
+            FormulaResultType::Timeout => "s UNKNOWN\nc Timeout".to_string(),
+            _ => "s UNKNOWN".to_string(),
+        };
+        solution
+    }
 }
