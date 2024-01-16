@@ -1,5 +1,5 @@
 use crate::schemas::{Clause, Formula, FormulaResultType, Value, Variable};
-use log::warn;
+use log::{info, warn};
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
 use std::io::Read;
@@ -81,7 +81,7 @@ impl Formula {
                 let num_clauses = parts[3].parse::<u16>().expect("Can parse num clauses");
                 clauses = Vec::with_capacity(num_clauses as usize);
                 variables = vec![Variable::new(); num_vars as usize];
-            } else if line.starts_with('0') {
+            } else if line.trim() == "0" {
                 let clause = Clause::create_clause(
                     current_literals.clone().as_str(),
                     &mut variables,
@@ -90,7 +90,7 @@ impl Formula {
                 clauses.push(clause);
                 clause_index += 1;
                 current_literals = String::new();
-            } else if line.ends_with('0') {
+            } else if line.ends_with(" 0") {
                 let clause = Clause::create_clause(line, &mut variables, clause_index);
                 clauses.push(clause);
                 clause_index += 1;
