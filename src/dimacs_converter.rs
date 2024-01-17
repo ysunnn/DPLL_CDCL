@@ -1,5 +1,5 @@
 use crate::schemas::{Clause, Formula, FormulaResultType, Value, Variable};
-use log::{info, warn};
+use log::{warn};
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
 use std::io::Read;
