@@ -1,5 +1,6 @@
 use crate::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, ResultType,
+    Value, Variable,
 };
 use log::{debug, error, info};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -137,7 +138,7 @@ fn set_variable_false(
 /// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
 /// variable. We set the clause to not sat.
 /// for every negative occurrences in a clause we update the number of active literals by one.
-fn undo_assignment(variable: usize, formula: &mut Formula) -> Value{
+fn undo_assignment(variable: usize, formula: &mut Formula) -> Value {
     let variable_index = variable - 1;
     let variable_ref = &mut formula.variables[variable_index];
     let old_value = variable_ref.value.clone();
@@ -199,6 +200,13 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
                         debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable);
                         if formula.assigment_stack.is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
+                        }
+                        match formula.heuristic_type {
+                            HeuristicType::VSIDS => {
+                                info!("{:?}", formula.heuristic_type);
+                                formula.vsids_score(top.variable - 1)
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -285,12 +293,12 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // Branching type because we decided freely to set this variable!
         // theoretically can we ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
-        if set_variable_true(variable_index + 1, formula, AssigmentType::Branching) == ResultType::Conflict {
+        if set_variable_true(variable_index + 1, formula, AssigmentType::Branching)
+            == ResultType::Conflict
+        {
             // we should never get here
             match backtrack(formula) {
-                Ok(_) => {
-
-                }
+                Ok(_) => {}
                 Err(result) => {
                     formula.result = result;
                     error!("set_variable_true Backtrack failed: {:?}", &formula.result);
@@ -320,6 +328,13 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             if result == ResultType::Success {
                 continue;
             }
+            match formula.heuristic_type {
+                HeuristicType::VSIDS => {
+                    formula.vsids_score((unit.abs() - 1) as usize);
+                }
+                _ => {}
+            }
+
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we exiting the loop automatically.
             match backtrack(formula) {
@@ -338,7 +353,9 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 #[cfg(test)]
 mod tests {
     use crate::dpll::{find_unit, set_variable_true};
-    use crate::schemas::{AssigmentType, Clause, Formula, FormulaResultType, Value, Variable};
+    use crate::schemas::{
+        AssigmentType, Clause, Formula, FormulaResultType, HeuristicType, Value, Variable,
+    };
     use std::collections::VecDeque;
 
     #[test]
@@ -348,11 +365,13 @@ mod tests {
                 value: Value::Null,
                 positive_occurrences: vec![0, 1],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![0],
+                score: 0.0,
             },
         ];
         let mut formular = Formula {
@@ -376,6 +395,7 @@ mod tests {
             number_of_unsatisfied_clauses: 0,
             result: FormulaResultType::Unknown,
             variables_index: vec![],
+            heuristic_type: HeuristicType::None,
         };
         set_variable_true(1, &mut formular, AssigmentType::Branching);
         assert_eq!(formular.variables[0].value, Value::True);
@@ -394,16 +414,19 @@ mod tests {
                 value: Value::True,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
         ];
         let formula = Formula {
@@ -427,6 +450,7 @@ mod tests {
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
             variables_index: vec![],
+            heuristic_type: HeuristicType::None,
         };
         let unit = find_unit(&variables_indexes, &formula.variables);
         assert_eq!(unit, 3);
@@ -440,16 +464,19 @@ mod tests {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
         ];
 
@@ -474,6 +501,7 @@ mod tests {
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
             variables_index: vec![],
+            heuristic_type: HeuristicType::None,
         };
 
         let _ = find_unit(&variables_indexes, &formula.variables);
@@ -488,16 +516,19 @@ mod tests {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                score: 0.0,
             },
         ];
         let formula = Formula {
@@ -508,6 +539,7 @@ mod tests {
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
             variables_index: vec![],
+            heuristic_type: HeuristicType::None,
         };
         let _ = find_unit(&variables_indexes, &formula.variables);
     }
