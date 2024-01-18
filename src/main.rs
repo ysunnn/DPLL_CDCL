@@ -25,7 +25,7 @@ fn test() {
     let path = PathBuf::from("data/inputs/sat\\aim-100-2_0-yes1-2.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
-    formula.heuristic_type=HeuristicType::VSIDS;
+    formula.heuristic_type = HeuristicType::VSIDS;
     formula.jeroslow_wang_score();
     dpll(&mut formula, Arc::new(AtomicBool::new(false)));
 
@@ -54,7 +54,7 @@ fn plot_data(
         .margin(20)
         .x_label_area_size(80)
         .y_label_area_size(80)
-        .build_cartesian_2d(0i32..num_of_problems, 0i32..60000)
+        .build_cartesian_2d(0i32..num_of_problems, 0u128..60000)
         .unwrap();
 
     chart
@@ -93,10 +93,10 @@ fn plot_data(
         chart
             .draw_series(
                 LineSeries::new(
-                    current_data.iter().map(|(x, y)| (*x, y.as_millis() as i32)),
+                    current_data.iter().map(|(x, y)| (*x, y.as_millis())),
                     &color,
                 )
-                .point_size(2),
+                    .point_size(2),
             )
             .unwrap()
             .label(name)
@@ -122,7 +122,7 @@ fn bench(
 
     let start = time::Instant::now();
     let mut formula = Formula::from_file(&path).unwrap();
-
+    formula.heuristic_type = h;
     match h {
         HeuristicType::DLIS => formula.dlis(),
         HeuristicType::DLCS => formula.dlcs(),
@@ -238,34 +238,59 @@ fn benchmark() {
 }
 
 fn tests() {
-    let dirs = fs::read_dir("data/inputs/test").unwrap();
-    let mut times: Vec<Duration> = Vec::new();
-    for dir in dirs {
-        let dir = dir.unwrap().path();
-        let cdir = dir.file_name().unwrap();
-        let excpexted = match cdir.to_str().unwrap() {
-            "sat" => FormulaResultType::Satisfiable,
-            "unsat" => FormulaResultType::Unsatisfiable,
-            _ => {
-                continue;
-            }
-        };
-        for path in fs::read_dir(dir).unwrap() {
-            let path = path.unwrap().path();
-            info!("Formula {:?}", path);
-            let start = time::Instant::now();
-            let mut formula = Formula::from_file(&path).unwrap();
-            dpll(&mut formula, Arc::new(AtomicBool::new(false)));
-            info!("Result: {}", Formula::write_solution(&formula));
-            assert_eq!(formula.result, excpexted);
-            let time = start.elapsed();
-            info!("Time: {:?}", time);
-            times.push(time);
-        }
-    }
-
     let mut data = Vec::new();
-    data.push((HeuristicType::None, times.clone()));
+
+    for heuristic in vec![
+        HeuristicType::None,
+        HeuristicType::DLIS,
+        HeuristicType::DLCS,
+        HeuristicType::MOM,
+        HeuristicType::JeroslowWang,
+        HeuristicType::VSIDS,
+    ]
+    {
+        let dirs = fs::read_dir("data/inputs/test").unwrap();
+        let mut times: Vec<Duration> = Vec::new();
+        for dir in dirs {
+            let dir = dir.unwrap().path();
+            let cdir = dir.file_name().unwrap();
+            let excpexted = match cdir.to_str().unwrap() {
+                "sat" => FormulaResultType::Satisfiable,
+                "unsat" => FormulaResultType::Unsatisfiable,
+                _ => {
+                    continue;
+                }
+            };
+            for path in fs::read_dir(dir).unwrap() {
+                let path = path.unwrap().path();
+                info!("Formula {:?}", path);
+                let start = time::Instant::now();
+                let mut formula = Formula::from_file(&path).unwrap();
+                formula.heuristic_type = heuristic;
+
+                match heuristic {
+                    HeuristicType::DLIS => formula.dlis(),
+                    HeuristicType::DLCS => formula.dlcs(),
+                    HeuristicType::MOM => formula.mom(),
+                    HeuristicType::JeroslowWang => formula.jeroslow_wang_score(),
+                    HeuristicType::VSIDS => {
+                        formula.heuristic_type = HeuristicType::VSIDS;
+                        formula.jeroslow_wang_score()
+                    }
+                    HeuristicType::None => {}
+                }
+
+                dpll(&mut formula, Arc::new(AtomicBool::new(false)));
+                info!("Result: {}", Formula::write_solution(&formula));
+                assert_eq!(formula.result, excpexted);
+                let time = start.elapsed();
+                info!("Time: {:?}", time);
+                times.push(time);
+            }
+        }
+
+        data.push((heuristic, times.clone()));
+    }
 
     plot_data(&data, 30, "cactus_test_plot.png").unwrap();
 }
@@ -304,7 +329,7 @@ enum Commands {
 
 fn main() {
     #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
+        let _profiler = dhat::Profiler::new_heap();
 
     env_logger::init();
 
