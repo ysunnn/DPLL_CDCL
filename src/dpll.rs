@@ -1,7 +1,7 @@
 use crate::schemas::{
     AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable,
 };
-use log::{debug, error, info};
+use log::{debug, error};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -212,7 +212,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
             }
         }
     }
-    info!(target: "backtrack", "Backtrack finished");
+    debug!(target: "backtrack", "Backtrack finished");
     return Err(FormulaResultType::Unsatisfiable);
 }
 
