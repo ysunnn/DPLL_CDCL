@@ -108,7 +108,7 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, _)| (index, 0.0))
-            .collect::<Vec<(usize, f64)>>();
+            .collect::<Vec<(usize, f32)>>();
 
         Ok(Self {
             number_of_unsatisfied_clauses: clauses.len() as i16,

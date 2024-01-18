@@ -66,7 +66,7 @@ pub struct Variable {
     pub(crate) value: Value,
     pub(crate) positive_occurrences: Vec<usize>,
     pub(crate) negative_occurrences: Vec<usize>,
-    pub score: f64,
+    pub score: f32,
 }
 
 impl Variable {
@@ -80,16 +80,16 @@ impl Variable {
         }
     }
 
-    pub(crate) fn dlis(&self) -> f64 {
+    pub(crate) fn dlis(&self) -> f32 {
         (if self.positive_occurrences.len() > self.negative_occurrences.len() {
             self.positive_occurrences.len()
         } else {
             self.negative_occurrences.len()
-        }) as f64
+        }) as f32
     }
 
-    pub(crate) fn dlcs(&self) -> f64 {
-        (self.positive_occurrences.len() + self.negative_occurrences.len()) as f64
+    pub(crate) fn dlcs(&self) -> f32 {
+        (self.positive_occurrences.len() + self.negative_occurrences.len()) as f32
     }
 }
 
@@ -115,7 +115,7 @@ pub struct Formula {
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
     pub(crate) number_of_unsatisfied_clauses: i16,
-    pub(crate) variables_index: Vec<(usize, f64)>,
+    pub(crate) variables_index: Vec<(usize, f32)>,
     pub heuristic_type: HeuristicType,
 }
 
@@ -130,7 +130,7 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlis()))
-            .collect::<Vec<(usize, f64)>>();
+            .collect::<Vec<(usize, f32)>>();
         variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
     }
@@ -141,7 +141,7 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlcs()))
-            .collect::<Vec<(usize, f64)>>();
+            .collect::<Vec<(usize, f32)>>();
         variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
     }
@@ -152,7 +152,7 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlcs()))
-            .collect::<Vec<(usize, f64)>>();
+            .collect::<Vec<(usize, f32)>>();
         variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         variables_index.reverse();
         self.variables_index = variables_index;
@@ -164,20 +164,20 @@ impl Formula {
             let mut score = 0.0;
             for clause_index in var.positive_occurrences.iter() {
                 score +=
-                    2.0f64.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
+                    2.0f32.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
             }
             for clause_index in var.negative_occurrences.iter() {
                 score +=
-                    2.0f64.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
+                    2.0f32.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
             }
-            variables_index.push((index, score as f64));
+            variables_index.push((index, score as f32));
         }
         variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
     }
 
     pub fn vsids_score(&mut self, variables_index: usize) {
-        let decay_factor: f64 = 0.95;
+        let decay_factor: f32 = 0.95;
 
         let pos = &self.variables[variables_index].positive_occurrences.clone();
         let neg = &self.variables[variables_index].negative_occurrences.clone();
