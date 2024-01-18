@@ -1,5 +1,7 @@
-use crate::schemas::{AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable};
-use log::{debug, info};
+use crate::schemas::{
+    AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable,
+};
+use log::{debug, error, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -135,9 +137,10 @@ fn set_variable_false(
 /// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
 /// variable. We set the clause to not sat.
 /// for every negative occurrences in a clause we update the number of active literals by one.
-fn undo_assignment(variable: usize, formula: &mut Formula) {
+fn undo_assignment(variable: usize, formula: &mut Formula) -> Value{
     let variable_index = variable - 1;
     let variable_ref = &mut formula.variables[variable_index];
+    let old_value = variable_ref.value.clone();
 
     let (positive_occurrences, negative_occurrences) = match variable_ref.value {
         Value::True => (
@@ -165,6 +168,7 @@ fn undo_assignment(variable: usize, formula: &mut Formula) {
         let clause = &mut formula.clauses[index];
         clause.number_of_active_literals += 1;
     }
+    return old_value;
 }
 
 /// Backtrack the forced assigment
@@ -179,9 +183,14 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
         match top.assigment_type {
             AssigmentType::Branching => {
                 // unset the last branched variable
-                undo_assignment(top.variable, formula);
+                let old_value = undo_assignment(top.variable, formula);
                 formula.units.clear();
-                match set_variable_false(top.variable, formula, AssigmentType::Forced) {
+                let value = match old_value {
+                    Value::True => Value::False,
+                    Value::False => Value::True,
+                    _ => panic!("Invalid value"),
+                };
+                match set_variable(top.variable, formula, AssigmentType::Forced, value) {
                     ResultType::Success => {
                         debug!(target: "backtrack", "Unset Success variable: {}", top.variable);
                         return Ok(num_of_undones);
@@ -207,7 +216,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
     return Err(FormulaResultType::Unsatisfiable);
 }
 
-fn unit_propagation(formula: &mut Formula) {
+fn scan_for_units(formula: &mut Formula) {
     for clause in formula.clauses.iter() {
         if clause.number_of_active_literals == 1 {
             formula
@@ -221,7 +230,8 @@ fn unit_propagation(formula: &mut Formula) {
 /// A pure literal is a variable that only occurs positive or negative in the formula.
 /// If we find a pure literal we set the variable to the value that is needed to satisfy the formula.
 fn pure_literal_elimination(formula: &mut Formula) {
-    for variable_index in 0..formula.variables.len() {
+    for index in 0..formula.variables.len() {
+        let variable_index = formula.variables_index[index].0;
         let variable = &formula.variables[variable_index];
         match variable.is_pure() {
             Some(pure) => {
@@ -244,49 +254,53 @@ fn pure_literal_elimination(formula: &mut Formula) {
 }
 
 pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
-    let mut variable_index = 0;
+    let mut index = 0;
 
-    unit_propagation(formula);
+    scan_for_units(formula);
     pure_literal_elimination(formula);
     if formula.result == FormulaResultType::Unsatisfiable {
         return;
     }
 
-    while variable_index < formula.variables.len() {
-        // TODO: there must be a better way
+    loop {
+        if formula.is_solved() {
+            formula.result = FormulaResultType::Satisfiable;
+            return;
+        }
+
+        let variable_index = formula.variables_index[index].0;
+
         debug!(target: "dpll", "current variable index: {}", variable_index);
         if formula.variables[variable_index].value != Value::Null {
             debug!(target: "dpll", "Variable: {} is already set", variable_index + 1);
-            variable_index += 1;
+            index += 1;
             continue;
         }
+
         if timeout.load(Ordering::SeqCst) {
             formula.result = FormulaResultType::Timeout;
             return;
         }
-        assert_eq!(formula.number_of_unsatisfied_clauses, formula.clauses.iter().filter(|&c| !c.satisfiable).count() as i16);
         // start by setting the first variable to true
         // Branching type because we decided freely to set this variable!
         // theoretically can we ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
-        let f = set_variable_true(variable_index + 1, formula, AssigmentType::Branching);
-        if f == ResultType::Conflict {
+        if set_variable_true(variable_index + 1, formula, AssigmentType::Branching) == ResultType::Conflict {
+            // we should never get here
             match backtrack(formula) {
-                Ok(back) => {
-                    if back as usize > variable_index {
-                        variable_index = 0;
-                    } else {
-                        variable_index -= back as usize;
-                    }
+                Ok(_) => {
+
                 }
                 Err(result) => {
                     formula.result = result;
+                    error!("set_variable_true Backtrack failed: {:?}", &formula.result);
                     return;
                 }
             }
         }
 
-        variable_index += 1;
+        index += 1;
+        // propagate the units that have to be true now
         // propagate the units that have to be true now
         while let Some(unit) = formula.units.pop_front() {
             // Forced Assigment because of unit propagation !
@@ -309,12 +323,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we exiting the loop automatically.
             match backtrack(formula) {
-                Ok(back) => {
-                    if back as usize > variable_index {
-                        variable_index = 0;
-                    } else {
-                        variable_index -= back as usize;
-                    }
+                Ok(_) => {
+                    index = 0;
                 }
                 Err(result) => {
                     formula.result = result;
@@ -323,18 +333,6 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             }
         }
     }
-    for variable_index in 0..formula.variables.len() {
-        let variable = &formula.variables[variable_index];
-        debug!("{}: {:?} ", variable_index + 1, variable.value);
-    }
-
-
-    if formula.is_solved() {
-        formula.result = FormulaResultType::Satisfiable;
-        return;
-    }
-    formula.result = FormulaResultType::Unsatisfiable;
-    return;
 }
 
 #[cfg(test)]
@@ -377,6 +375,7 @@ mod tests {
             assigment_stack: vec![],
             number_of_unsatisfied_clauses: 0,
             result: FormulaResultType::Unknown,
+            variables_index: vec![],
         };
         set_variable_true(1, &mut formular, AssigmentType::Branching);
         assert_eq!(formular.variables[0].value, Value::True);
@@ -427,6 +426,7 @@ mod tests {
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
+            variables_index: vec![],
         };
         let unit = find_unit(&variables_indexes, &formula.variables);
         assert_eq!(unit, 3);
@@ -473,6 +473,7 @@ mod tests {
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
+            variables_index: vec![],
         };
 
         let _ = find_unit(&variables_indexes, &formula.variables);
@@ -506,6 +507,7 @@ mod tests {
             assigment_stack: vec![],
             result: FormulaResultType::Unknown,
             number_of_unsatisfied_clauses: 0,
+            variables_index: vec![],
         };
         let _ = find_unit(&variables_indexes, &formula.variables);
     }

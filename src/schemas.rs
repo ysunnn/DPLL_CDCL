@@ -1,3 +1,4 @@
+use clap::ValueEnum;
 use std::collections::VecDeque;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -5,6 +6,15 @@ pub enum Value {
     Null,
     True,
     False,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum HeuristicType {
+    None,
+    MOM,
+    DLIS,
+    DLCS,
+    JeroslowWang,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -67,6 +77,18 @@ impl Variable {
             None
         }
     }
+
+    pub(crate) fn dlis(&self) -> usize {
+        if self.positive_occurrences.len() > self.negative_occurrences.len() {
+            self.positive_occurrences.len()
+        } else {
+            self.negative_occurrences.len()
+        }
+    }
+
+    pub(crate) fn dlcs(&self) -> usize {
+        self.positive_occurrences.len() + self.negative_occurrences.len()
+    }
 }
 
 /// The assignment struct
@@ -91,11 +113,63 @@ pub struct Formula {
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
     pub(crate) number_of_unsatisfied_clauses: i16,
+    pub(crate) variables_index: Vec<(usize, usize)>,
 }
 
 impl Formula {
-
     pub fn is_solved(&self) -> bool {
         return self.number_of_unsatisfied_clauses == 0;
+    }
+
+    pub fn dlis(&mut self) {
+        let mut variables_index = self
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(index, var)| (index, var.dlis()))
+            .collect::<Vec<(usize, usize)>>();
+        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+        self.variables_index = variables_index;
+    }
+
+    pub fn dlcs(&mut self) {
+        let mut variables_index = self
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(index, var)| (index, var.dlcs()))
+            .collect::<Vec<(usize, usize)>>();
+        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+        self.variables_index = variables_index;
+    }
+
+    pub fn mom(&mut self) {
+        let mut variables_index = self
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(index, var)| (index, var.dlcs()))
+            .collect::<Vec<(usize, usize)>>();
+        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+        variables_index.reverse();
+        self.variables_index = variables_index;
+    }
+
+    pub fn jeroslow_wang_score(&mut self) {
+        let mut variables_index = Vec::new();
+        for (index, var) in self.variables.iter().enumerate() {
+            let mut score = 0.0;
+            for clause_index in var.positive_occurrences.iter() {
+                score +=
+                    2.0f64.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
+            }
+            for clause_index in var.negative_occurrences.iter() {
+                score +=
+                    2.0f64.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
+            }
+            variables_index.push((index, score as usize));
+        }
+        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+        self.variables_index = variables_index;
     }
 }
