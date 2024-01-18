@@ -203,7 +203,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
                         }
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
-                                info!("{:?}", formula.heuristic_type);
+                                debug!("{:?}", formula.heuristic_type);
                                 formula.vsids_score(top.variable - 1)
                             }
                             _ => {}
