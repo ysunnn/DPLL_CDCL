@@ -8,9 +8,10 @@ a simple dpll algorithm with basic heuristics
 
 | Heuristic    | Solved | Timeout | Percentage Solved |
 |--------------|--------|---------|-------------------|
-| JeroslowWang | 116    | 56      | 67.44%            |
+| VSIDS        | 146    | 26      | 84.88%            |
 | None         | 112    | 60      | 65.11%            |
-| MOM          | 110    | 62      | 63.95%            |
+| MOM          | 111    | 61      | 64.53%            |
+| JeroslowWang | 110    | 62      | 63.90%            |
 | DLIS         | 98     | 74      | 56.97%            |
 | DLCS         | 97     | 75      | 56.39%            |
 
@@ -50,23 +51,34 @@ a simple dpll algorithm with basic heuristics
 ### MOM
 
 ```bash
-[2024-01-18T12:26:22Z INFO  benchmark] Heuristic: MOM
-[2024-01-18T12:26:22Z INFO  benchmark] Solved: 110
-[2024-01-18T12:26:22Z INFO  benchmark] Timeout: 62
-[2024-01-18T12:26:22Z INFO  benchmark] Error: 0
-[2024-01-18T12:26:22Z INFO  benchmark] Total: 172
-[2024-01-18T12:26:22Z INFO  benchmark] Solved: 63.95348837209303%
+[2024-01-18T15:32:42Z INFO  benchmark] Heuristic: MOM
+[2024-01-18T15:32:42Z INFO  benchmark] Solved: 111
+[2024-01-18T15:32:42Z INFO  benchmark] Timeout: 61       
+[2024-01-18T15:32:42Z INFO  benchmark] Error: 0
+[2024-01-18T15:32:42Z INFO  benchmark] Total: 172
+[2024-01-18T15:32:42Z INFO  benchmark] Solved: 64.53488372093024%
 ```
 
 ### JeroslowWang
 
 ```bash
-[2024-01-18T12:28:23Z INFO  benchmark] Heuristic: JeroslowWang
-[2024-01-18T12:28:23Z INFO  benchmark] Solved: 116
-[2024-01-18T12:28:23Z INFO  benchmark] Timeout: 56
-[2024-01-18T12:28:23Z INFO  benchmark] Error: 0
-[2024-01-18T12:28:23Z INFO  benchmark] Total: 172
-[2024-01-18T12:28:23Z INFO  benchmark] Solved: 67.44186046511628%
+[2024-01-18T15:34:44Z INFO  benchmark] Heuristic: JeroslowWang
+[2024-01-18T15:34:44Z INFO  benchmark] Solved: 110
+[2024-01-18T15:34:44Z INFO  benchmark] Timeout: 62
+[2024-01-18T15:34:44Z INFO  benchmark] Error: 0
+[2024-01-18T15:34:44Z INFO  benchmark] Total: 172
+[2024-01-18T15:34:44Z INFO  benchmark] Solved: 63.95348837209303%
+```
+
+### VSIDS
+
+```bash
+[2024-01-18T15:36:02Z INFO  benchmark] Heuristic: VSIDS
+[2024-01-18T15:36:02Z INFO  benchmark] Solved: 146
+[2024-01-18T15:36:02Z INFO  benchmark] Timeout: 26
+[2024-01-18T15:36:02Z INFO  benchmark] Error: 0
+[2024-01-18T15:36:02Z INFO  benchmark] Total: 172
+[2024-01-18T15:36:02Z INFO  benchmark] Solved: 84.88372093023256%
 ```
 
 ## setup
