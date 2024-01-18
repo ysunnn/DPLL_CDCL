@@ -293,7 +293,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                 }
                 Err(result) => {
                     formula.result = result;
-                    error!("set_variable_true Backtrack failed: {:?}", &formula.result);
+                    debug!("set_variable_true Backtrack failed: {:?}", &formula.result);
                     return;
                 }
             }
