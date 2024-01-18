@@ -1,7 +1,7 @@
 use crate::schemas::{
     AssigmentType, Assignment, Formula, FormulaResultType, PureType, ResultType, Value, Variable,
 };
-use log::{debug, error};
+use log::{debug};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
