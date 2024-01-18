@@ -1,7 +1,7 @@
 use crate::dpll::dpll;
 use crate::schemas::{Formula, FormulaResultType, HeuristicType};
 use clap::{Parser, Subcommand};
-use log::{error, info, warn};
+use log::{debug, error, info};
 use plotters::element::PathElement;
 use plotters::prelude::{
     BitMapBackend, ChartBuilder, Color, IntoDrawingArea, IntoFont, LineSeries, BLACK, BLUE, CYAN,
@@ -153,12 +153,12 @@ fn bench(
     match handle.join() {
         Ok(result) => {
             let elapsed = start.elapsed();
-            info!(target: "benchmark", "Time: {:?}", elapsed);
+            debug!(target: "benchmark", "Time: {:?}", elapsed);
             return if result == *expected {
-                info!(target: "benchmark", "Right result: {:?} Formula {:?}", result, path);
+                debug!(target: "benchmark", "Right result: {:?} Formula {:?}", result, path);
                 (1, 0, 0, elapsed)
             } else if result == FormulaResultType::Timeout {
-                warn!(target: "benchmark", "Timeout result: {:?} Formula {:?}", result, path);
+                debug!(target: "benchmark", "Timeout result: {:?} Formula {:?}", result, path);
                 (0, 1, 0, elapsed)
             } else {
                 error!(target: "benchmark", "Wrong result: {:?} Formula {:?}", result, path);
