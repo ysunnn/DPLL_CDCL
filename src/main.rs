@@ -22,10 +22,11 @@ mod schemas;
 
 fn test() {
     let start = time::Instant::now();
-    let path = PathBuf::from("data/inputs/sat/aim-100-1_6-yes1-1.cnf");
+    let path = PathBuf::from("data/inputs/sat\\aim-100-2_0-yes1-2.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
-    formula.dlcs();
+    formula.heuristic_type=HeuristicType::VSIDS;
+    formula.jeroslow_wang_score();
     dpll(&mut formula, Arc::new(AtomicBool::new(false)));
 
     for clause in formula.clauses.iter() {
@@ -76,7 +77,8 @@ fn plot_data(
             HeuristicType::DLCS => GREEN,
             HeuristicType::MOM => BLUE,
             HeuristicType::JeroslowWang => MAGENTA,
-            HeuristicType::None => CYAN,
+            HeuristicType::VSIDS => CYAN,
+            HeuristicType::None => BLACK,
         };
 
         let name = match heuristic {
@@ -84,6 +86,7 @@ fn plot_data(
             HeuristicType::DLCS => "DLCS",
             HeuristicType::MOM => "MOM",
             HeuristicType::JeroslowWang => "JeroslowWang",
+            HeuristicType::VSIDS => "VSIDS",
             HeuristicType::None => "None",
         };
 
@@ -125,6 +128,10 @@ fn bench(
         HeuristicType::DLCS => formula.dlcs(),
         HeuristicType::MOM => formula.mom(),
         HeuristicType::JeroslowWang => formula.jeroslow_wang_score(),
+        HeuristicType::VSIDS => {
+            formula.heuristic_type = HeuristicType::VSIDS;
+            formula.jeroslow_wang_score()
+        }
         HeuristicType::None => {}
     }
 
@@ -178,6 +185,7 @@ fn benchmark() {
         HeuristicType::DLCS,
         HeuristicType::MOM,
         HeuristicType::JeroslowWang,
+        HeuristicType::VSIDS,
     ] {
         let paths = fs::read_dir("data/inputs").unwrap();
 
@@ -315,6 +323,10 @@ fn main() {
                     HeuristicType::DLCS => formula.dlcs(),
                     HeuristicType::MOM => formula.mom(),
                     HeuristicType::JeroslowWang => formula.jeroslow_wang_score(),
+                    HeuristicType::VSIDS => {
+                        formula.heuristic_type = HeuristicType::VSIDS;
+                        formula.jeroslow_wang_score()
+                    }
                     HeuristicType::None => {}
                 },
                 None => {}

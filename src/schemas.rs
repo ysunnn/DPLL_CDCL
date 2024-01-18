@@ -15,6 +15,7 @@ pub enum HeuristicType {
     DLIS,
     DLCS,
     JeroslowWang,
+    VSIDS,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -65,6 +66,7 @@ pub struct Variable {
     pub(crate) value: Value,
     pub(crate) positive_occurrences: Vec<usize>,
     pub(crate) negative_occurrences: Vec<usize>,
+    pub score: f64,
 }
 
 impl Variable {
@@ -78,16 +80,16 @@ impl Variable {
         }
     }
 
-    pub(crate) fn dlis(&self) -> usize {
-        if self.positive_occurrences.len() > self.negative_occurrences.len() {
+    pub(crate) fn dlis(&self) -> f64 {
+        (if self.positive_occurrences.len() > self.negative_occurrences.len() {
             self.positive_occurrences.len()
         } else {
             self.negative_occurrences.len()
-        }
+        }) as f64
     }
 
-    pub(crate) fn dlcs(&self) -> usize {
-        self.positive_occurrences.len() + self.negative_occurrences.len()
+    pub(crate) fn dlcs(&self) -> f64 {
+        (self.positive_occurrences.len() + self.negative_occurrences.len()) as f64
     }
 }
 
@@ -113,7 +115,8 @@ pub struct Formula {
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
     pub(crate) number_of_unsatisfied_clauses: i16,
-    pub(crate) variables_index: Vec<(usize, usize)>,
+    pub(crate) variables_index: Vec<(usize, f64)>,
+    pub heuristic_type: HeuristicType,
 }
 
 impl Formula {
@@ -127,8 +130,8 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlis()))
-            .collect::<Vec<(usize, usize)>>();
-        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+            .collect::<Vec<(usize, f64)>>();
+        variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
     }
 
@@ -138,8 +141,8 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlcs()))
-            .collect::<Vec<(usize, usize)>>();
-        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+            .collect::<Vec<(usize, f64)>>();
+        variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
     }
 
@@ -149,8 +152,8 @@ impl Formula {
             .iter()
             .enumerate()
             .map(|(index, var)| (index, var.dlcs()))
-            .collect::<Vec<(usize, usize)>>();
-        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+            .collect::<Vec<(usize, f64)>>();
+        variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         variables_index.reverse();
         self.variables_index = variables_index;
     }
@@ -167,9 +170,45 @@ impl Formula {
                 score +=
                     2.0f64.powi(-(self.clauses[*clause_index].number_of_active_literals as i32));
             }
-            variables_index.push((index, score as usize));
+            variables_index.push((index, score as f64));
         }
-        variables_index.sort_by(|a, b| b.1.cmp(&a.1));
+        variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         self.variables_index = variables_index;
+    }
+
+    pub fn vsids_score(&mut self, variables_index: usize) {
+        let decay_factor: f64 = 0.95;
+
+        let pos = &self.variables[variables_index].positive_occurrences.clone();
+        let neg = &self.variables[variables_index].negative_occurrences.clone();
+
+        for clause_index in pos {
+            let lits: Vec<usize> = self.clauses[*clause_index]
+                .literals
+                .iter()
+                .map(|x| (x.abs() - 1) as usize)
+                .collect();
+            for lit in lits {
+                self.variables[lit].score += 1.0;
+            }
+        }
+
+        for clause_index in neg {
+            let lits: Vec<usize> = self.clauses[*clause_index]
+                .literals
+                .iter()
+                .map(|x| (x.abs() - 1) as usize)
+                .collect();
+            for lit in lits {
+                self.variables[lit].score += 1.0;
+            }
+        }
+
+        for variable_index in 0..self.variables.len() {
+            self.variables[variable_index].score *= decay_factor;
+            self.variables_index[variable_index] =
+                (variable_index, self.variables[variable_index].score)
+        }
+        self.variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
     }
 }

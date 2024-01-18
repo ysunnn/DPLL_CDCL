@@ -1,4 +1,4 @@
-use crate::schemas::{Clause, Formula, FormulaResultType, Value, Variable};
+use crate::schemas::{Clause, Formula, FormulaResultType, HeuristicType, Value, Variable};
 use log::warn;
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
@@ -12,6 +12,7 @@ impl Variable {
             value: Value::Null,
             positive_occurrences: Vec::new(),
             negative_occurrences: Vec::new(),
+            score: 0.0,
         }
     }
 }
@@ -106,8 +107,8 @@ impl Formula {
         let variables_index = variables
             .iter()
             .enumerate()
-            .map(|(index, _)| (index, 0))
-            .collect::<Vec<(usize, usize)>>();
+            .map(|(index, _)| (index, 0.0))
+            .collect::<Vec<(usize, f64)>>();
 
         Ok(Self {
             number_of_unsatisfied_clauses: clauses.len() as i16,
@@ -117,6 +118,7 @@ impl Formula {
             units: VecDeque::new(),
             result: FormulaResultType::Unknown,
             variables_index,
+            heuristic_type: HeuristicType::None,
         })
     }
 
