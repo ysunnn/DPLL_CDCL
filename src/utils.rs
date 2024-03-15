@@ -1,9 +1,16 @@
-use crate::schemas::{Clause, Formula, FormulaResultType, HeuristicType, Value, Variable};
+use crate::dpll::schemas::{Clause, Formula, FormulaResultType, HeuristicType, Value, Variable};
 use log::warn;
+use plotters::backend::BitMapBackend;
+use plotters::chart::ChartBuilder;
+use plotters::drawing::IntoDrawingArea;
+use plotters::element::PathElement;
+use plotters::prelude::{IntoFont, LineSeries, BLACK, BLUE, CYAN, GREEN, MAGENTA, RED, WHITE};
+use plotters::style::Color;
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::Duration;
 
 impl Variable {
     /// Create new variable
@@ -145,4 +152,76 @@ impl Formula {
         };
         solution
     }
+}
+
+pub fn plot_data(
+    data: &Vec<(HeuristicType, Vec<Duration>)>,
+    num_of_problems: i32,
+    name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new(name, (1920, 1080)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Cactus Plot", ("sans-serif", 50).into_font())
+        .margin(20)
+        .x_label_area_size(80)
+        .y_label_area_size(80)
+        .build_cartesian_2d(0i32..num_of_problems, 0u128..60000)
+        .unwrap();
+
+    chart
+        .configure_mesh()
+        .x_desc("Solved Problems")
+        .y_desc("Time in milliseconds")
+        .label_style(("sans-serif", 20).into_font())
+        .draw()?;
+
+    for (heuristic, times) in data {
+        let mut current_data = Vec::new();
+        for mil_sec in 1..60000 {
+            let sec = Duration::from_millis(mil_sec);
+            let count = times.iter().filter(|&time| time <= &sec).count();
+            current_data.push((count as i32, sec));
+        }
+
+        let color = match heuristic {
+            HeuristicType::DLIS => RED,
+            HeuristicType::DLCS => GREEN,
+            HeuristicType::MOM => BLUE,
+            HeuristicType::JeroslowWang => MAGENTA,
+            HeuristicType::VSIDS => CYAN,
+            HeuristicType::None => BLACK,
+        };
+
+        let name = match heuristic {
+            HeuristicType::DLIS => "DLIS",
+            HeuristicType::DLCS => "DLCS",
+            HeuristicType::MOM => "MOM",
+            HeuristicType::JeroslowWang => "JeroslowWang",
+            HeuristicType::VSIDS => "VSIDS",
+            HeuristicType::None => "None",
+        };
+
+        chart
+            .draw_series(
+                LineSeries::new(
+                    current_data.iter().map(|(x, y)| (*x, y.as_millis())),
+                    &color,
+                )
+                .point_size(2),
+            )
+            .unwrap()
+            .label(name)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.clone()));
+    }
+    chart
+        .configure_series_labels()
+        .border_style(&BLACK)
+        .background_style(&WHITE.mix(0.8))
+        .label_font(("sans-serif", 20).into_font())
+        .draw()
+        .unwrap();
+
+    Ok(())
 }
