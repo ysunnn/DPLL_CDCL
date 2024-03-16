@@ -61,20 +61,8 @@ fn main() {
         Commands::Solve { file, heuristic } => {
             let start = time::Instant::now();
             let mut formula = Formula::from_file(&file).unwrap();
-            match heuristic {
-                Some(heuristic) => match heuristic {
-                    HeuristicType::DLIS => formula.dlis(),
-                    HeuristicType::DLCS => formula.dlcs(),
-                    HeuristicType::MOM => formula.mom(),
-                    HeuristicType::JeroslowWang => formula.jeroslow_wang_score(),
-                    HeuristicType::VSIDS => {
-                        formula.heuristic_type = HeuristicType::VSIDS;
-                        formula.jeroslow_wang_score()
-                    }
-                    HeuristicType::None => {}
-                },
-                None => {}
-            }
+            formula.heuristic_type = heuristic.unwrap_or(HeuristicType::None);
+            formula.update_score();
             run_dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
             info!("solved in {:?}", start.elapsed());
             println!("{}", formula.write_solution());

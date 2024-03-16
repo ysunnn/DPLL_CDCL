@@ -1,21 +1,24 @@
-use crate::dpll::schemas::{Formula, Value, Variable};
+use crate::dpll::schemas::{Formula, HeuristicType, Value, Variable};
 
 impl Variable {
     pub(crate) fn dlis(&self) -> f32 {
-        (if self.positive_occurrences.len() > self.negative_occurrences.len() {
-            self.positive_occurrences.len()
+        (if self.num_of_unsolved_clauses_with_positive_occurrences
+            > self.num_of_unsolved_clauses_with_negative_occurrences
+        {
+            self.num_of_unsolved_clauses_with_positive_occurrences
         } else {
-            self.negative_occurrences.len()
+            self.num_of_unsolved_clauses_with_negative_occurrences
         }) as f32
     }
 
     pub(crate) fn dlcs(&self) -> f32 {
-        (self.positive_occurrences.len() + self.negative_occurrences.len()) as f32
+        (self.num_of_unsolved_clauses_with_positive_occurrences
+            + self.num_of_unsolved_clauses_with_negative_occurrences) as f32
     }
 }
 
 impl Formula {
-    pub fn dlis(&mut self) {
+    fn dlis(&mut self) {
         let mut variables_index = self
             .variables
             .iter()
@@ -26,7 +29,7 @@ impl Formula {
         self.variables_index = variables_index;
     }
 
-    pub fn dlcs(&mut self) {
+    fn dlcs(&mut self) {
         let mut variables_index = self
             .variables
             .iter()
@@ -37,7 +40,7 @@ impl Formula {
         self.variables_index = variables_index;
     }
 
-    pub fn mom(&mut self) {
+    fn mom(&mut self) {
         let mut variables_index = self
             .variables
             .iter()
@@ -49,7 +52,7 @@ impl Formula {
         self.variables_index = variables_index;
     }
 
-    pub fn jeroslow_wang_score(&mut self) {
+    fn jeroslow_wang_score(&mut self) {
         self.variables_index = self
             .variables
             .iter()
@@ -113,5 +116,16 @@ impl Formula {
                 (variable_index, self.variables[variable_index].score)
         }
         self.variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
+    }
+
+    pub fn update_score(&mut self) {
+        match self.heuristic_type {
+            HeuristicType::DLIS => self.dlis(),
+            HeuristicType::DLCS => self.dlcs(),
+            HeuristicType::MOM => self.mom(),
+            HeuristicType::JeroslowWang => self.jeroslow_wang_score(),
+            HeuristicType::VSIDS => {} //self.vsids_score(),
+            HeuristicType::None => {}
+        }
     }
 }

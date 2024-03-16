@@ -19,6 +19,8 @@ impl Variable {
             value: Value::Null,
             positive_occurrences: Vec::new(),
             negative_occurrences: Vec::new(),
+            num_of_unsolved_clauses_with_negative_occurrences: 0,
+            num_of_unsolved_clauses_with_positive_occurrences: 0,
             score: 0.0,
         }
     }
@@ -45,8 +47,10 @@ impl Clause {
                 // DIMACS CNF format's variables are numbered from 1
                 // but the variables are numbered from 0
                 variables[var - 1].positive_occurrences.push(clause_index);
+                variables[var - 1].num_of_unsolved_clauses_with_positive_occurrences += 1;
             } else {
                 variables[var - 1].negative_occurrences.push(clause_index);
+                variables[var - 1].num_of_unsolved_clauses_with_negative_occurrences += 1;
             }
         }
         let literals: Vec<i16> = literals_set.into_iter().collect();

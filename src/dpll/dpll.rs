@@ -1,8 +1,8 @@
 use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, ResultType,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, SetResultType,
     Value, Variable,
 };
-use log::{debug, error};
+use log::debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -41,54 +41,62 @@ fn set_variable(
     formula: &mut Formula,
     assigment: AssigmentType,
     value: Value,
-) -> ResultType {
+) -> SetResultType {
     debug!(target: "set_variable", "Set variable: {} to {:?} by: {:?}", variable, value, assigment);
     let variable_index = set_variable_and_return_index(variable, formula, value);
 
-    formula.assigment_stack.push(Assignment {
+    formula.assigment_stack_push(Assignment {
         variable,
         assigment_type: assigment,
+        value,
     });
 
     debug!(target: "set_variable", "{:?}", formula.variables[variable_index]);
 
     let (positive_occurrences, negative_occurrences) = match value {
         Value::True => (
-            &formula.variables[variable_index].positive_occurrences,
-            &formula.variables[variable_index].negative_occurrences,
+            formula.variables[variable_index]
+                .positive_occurrences
+                .clone(),
+            formula.variables[variable_index]
+                .negative_occurrences
+                .clone(),
         ),
         Value::False => (
-            &formula.variables[variable_index].negative_occurrences,
-            &formula.variables[variable_index].positive_occurrences,
+            formula.variables[variable_index]
+                .negative_occurrences
+                .clone(),
+            formula.variables[variable_index]
+                .positive_occurrences
+                .clone(),
         ),
         _ => panic!("Invalid value"),
     };
 
-    let mut result = ResultType::Success;
+    let mut result = SetResultType::Success;
     let mut clause;
-    for &index in positive_occurrences {
+    for index in positive_occurrences {
         // first we set all the clauses where the variable occurs positive to satisfied
-        // so if a variable appears positive and negative in a clause we set the clause to satisfied so we do not propagate the variable again
+        // so if a variable appears positive and negative in a clause we set the clause to satisfied, so we do not propagate the variable again
         clause = &mut formula.clauses[index];
         // set the clause to satisfied
-        if clause.satisfiable {
+        if clause.is_satisfied() {
             continue;
         }
-        clause.satisfiable = true;
-        clause.satisfied_by_variable = variable;
+        clause.set_true(variable, &mut formula.variables);
         formula.number_of_unsatisfied_clauses -= 1;
     }
 
-    for &index in negative_occurrences {
+    for index in negative_occurrences {
         clause = &mut formula.clauses[index];
         clause.number_of_active_literals -= 1;
 
-        if clause.satisfiable {
+        if clause.is_satisfied() {
             continue;
         }
         match clause.number_of_active_literals {
             0 => {
-                result = ResultType::Conflict;
+                result = SetResultType::Conflict;
             }
             1 => {
                 formula
@@ -99,6 +107,8 @@ fn set_variable(
         }
     }
 
+    //formula.update_score();
+
     return result;
 }
 
@@ -108,13 +118,13 @@ fn set_variable(
 /// [`formula`](Formula) is the complete formula we want to solve
 ///
 /// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
-/// For the negative occurrences the number of of active literals is reduced and if there is only one active literal in the
+/// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
 /// clause we add the variables to the unit queue for unit propagation.
 fn set_variable_true(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
-) -> ResultType {
+) -> SetResultType {
     set_variable(variable, formula, assigment, Value::True)
 }
 
@@ -124,13 +134,13 @@ fn set_variable_true(
 /// [`formula`](Formula) is the complete formula we want to solve
 ///
 /// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
-/// For the negative occurrences the number of of active literals is reduced and if there is only one active literal in the
+/// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
 /// clause we add the variables to the unit queue for unit propagation.
 fn set_variable_false(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
-) -> ResultType {
+) -> SetResultType {
     set_variable(variable, formula, assigment, Value::False)
 }
 
@@ -138,53 +148,56 @@ fn set_variable_false(
 /// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
 /// variable. We set the clause to not sat.
 /// for every negative occurrences in a clause we update the number of active literals by one.
-fn undo_assignment(variable: usize, formula: &mut Formula) -> Value {
+fn undo_assignment(variable: usize, value: Value, formula: &mut Formula) -> Value {
     let variable_index = variable - 1;
-    let variable_ref = &mut formula.variables[variable_index];
-    let old_value = variable_ref.value.clone();
 
-    let (positive_occurrences, negative_occurrences) = match variable_ref.value {
+    let (positive_occurrences, negative_occurrences) = match value {
         Value::True => (
-            &variable_ref.positive_occurrences,
-            &variable_ref.negative_occurrences,
+            formula.variables[variable_index]
+                .positive_occurrences
+                .clone(),
+            formula.variables[variable_index]
+                .negative_occurrences
+                .clone(),
         ),
         Value::False => (
-            &variable_ref.negative_occurrences,
-            &variable_ref.positive_occurrences,
+            formula.variables[variable_index]
+                .negative_occurrences
+                .clone(),
+            formula.variables[variable_index]
+                .positive_occurrences
+                .clone(),
         ),
-        _ => panic!("Invalid value, {:?}", variable_ref.value),
+        _ => panic!("Invalid value, {:?}", value),
     };
-    variable_ref.value = Value::Null;
+    formula.variables[variable_index].value = Value::Null;
 
-    for &index in positive_occurrences {
+    for index in positive_occurrences {
         let clause = &mut formula.clauses[index];
-        if clause.satisfied_by_variable == variable {
-            clause.satisfiable = false;
-            clause.satisfied_by_variable = 0;
-            formula.number_of_unsatisfied_clauses += 1;
-        }
+        formula.number_of_unsatisfied_clauses +=
+            clause.undo(variable, &mut formula.variables) as i16;
     }
 
-    for &index in negative_occurrences {
+    for index in negative_occurrences {
         let clause = &mut formula.clauses[index];
         clause.number_of_active_literals += 1;
     }
-    return old_value;
+    return value;
 }
 
 /// Backtrack the forced assigment
 ///
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
-/// If we still got an Branched assigment we undo this as well empty our unit queue and set the variable to false.
-/// than we going back to normal and start with unit propagation and regular assignments.
+/// If we still got a Branched assigment we undo this as well empty our unit queue and set the variable to false.
+/// Then we're going back to normal and start with unit propagation and regular assignments.
 fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
-    let mut num_of_undones = 0;
-    while let Some(top) = formula.assigment_stack.pop() {
+    let mut numb_of_undone = 0;
+    while let Some(top) = formula.assigment_stack_pop() {
         // Check the last element (the top of the stack)
         match top.assigment_type {
             AssigmentType::Branching => {
                 // unset the last branched variable
-                let old_value = undo_assignment(top.variable, formula);
+                let old_value = undo_assignment(top.variable, top.value, formula);
                 formula.units.clear();
                 let value = match old_value {
                     Value::True => Value::False,
@@ -192,13 +205,14 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
                     _ => panic!("Invalid value"),
                 };
                 match set_variable(top.variable, formula, AssigmentType::Forced, value) {
-                    ResultType::Success => {
+                    SetResultType::Success => {
                         debug!(target: "backtrack", "Unset Success variable: {}", top.variable);
-                        return Ok(num_of_undones);
+                        formula.update_score();
+                        return Ok(numb_of_undone);
                     }
-                    ResultType::Conflict => {
+                    SetResultType::Conflict => {
                         debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable);
-                        if formula.assigment_stack.is_empty() {
+                        if formula.assigment_stack_is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
                         match formula.heuristic_type {
@@ -214,9 +228,9 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
             AssigmentType::Forced => {
                 // Pop the element if the condition is met
                 debug!(target: "backtrack", "Undo assigment: {:?}", top);
-                undo_assignment(top.variable, formula);
+                undo_assignment(top.variable, top.value, formula);
                 debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable - 1]);
-                num_of_undones += 1;
+                numb_of_undone += 1;
             }
         }
     }
@@ -241,6 +255,9 @@ fn pure_literal_elimination(formula: &mut Formula) {
     for index in 0..formula.variables.len() {
         let variable_index = formula.variables_index[index].0;
         let variable = &formula.variables[variable_index];
+        if variable.value != Value::Null {
+            continue;
+        }
         match variable.is_pure() {
             Some(pure) => {
                 debug!("Pure positive: {}", variable_index + 1);
@@ -249,8 +266,8 @@ fn pure_literal_elimination(formula: &mut Formula) {
                     PureType::Negative => Value::False,
                 };
                 match set_variable(variable_index + 1, formula, AssigmentType::Branching, value) {
-                    ResultType::Success => {}
-                    ResultType::Conflict => {
+                    SetResultType::Success => {}
+                    SetResultType::Conflict => {
                         formula.result = FormulaResultType::Unsatisfiable;
                         return;
                     }
@@ -275,7 +292,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             formula.result = FormulaResultType::Satisfiable;
             return;
         }
-
+        //debug!("current variables index: {:?}", formula.variables_index);
         let variable_index = formula.variables_index[index].0;
 
         debug!(target: "dpll", "current variable index: {}", variable_index);
@@ -284,7 +301,6 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             index += 1;
             continue;
         }
-
         if timeout.load(Ordering::SeqCst) {
             formula.result = FormulaResultType::Timeout;
             return;
@@ -294,10 +310,9 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
         if set_variable_true(variable_index + 1, formula, AssigmentType::Branching)
-            == ResultType::Conflict
+            == SetResultType::Conflict
         {
             // we should never get here
-            error!("Conflict on first variable");
             match backtrack(formula) {
                 Ok(_) => {}
                 Err(result) => {
@@ -307,8 +322,10 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                 }
             }
         }
+        //pure_literal_elimination(formula);
+        formula.update_score();
 
-        index += 1;
+        index = 0;
         // propagate the units that have to be true now
         // propagate the units that have to be true now
         while let Some(unit) = formula.units.pop_front() {
@@ -325,8 +342,9 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             } else {
                 result = set_variable_false(unit.abs() as usize, formula, AssigmentType::Forced);
             }
-
-            if result == ResultType::Success {
+            //pure_literal_elimination(formula);
+            formula.update_score();
+            if result == SetResultType::Success {
                 continue;
             }
             match formula.heuristic_type {
@@ -337,7 +355,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             }
 
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
-            // after backtracking the unit queue should be empty. so we exiting the loop automatically.
+            // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
             match backtrack(formula) {
                 Ok(_) => {
                     index = 0;
@@ -366,12 +384,16 @@ mod tests {
                 value: Value::Null,
                 positive_occurrences: vec![0, 1],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![0],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
         ];
@@ -415,18 +437,24 @@ mod tests {
                 value: Value::True,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
         ];
@@ -465,18 +493,24 @@ mod tests {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::Null,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
         ];
@@ -517,18 +551,24 @@ mod tests {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
             Variable {
                 value: Value::False,
                 positive_occurrences: vec![],
                 negative_occurrences: vec![],
+                num_of_unsolved_clauses_with_negative_occurrences: 0,
+                num_of_unsolved_clauses_with_positive_occurrences: 0,
                 score: 0.0,
             },
         ];

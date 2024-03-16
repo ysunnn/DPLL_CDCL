@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use log::error;
 use std::collections::VecDeque;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -25,7 +26,7 @@ pub enum AssigmentType {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub enum ResultType {
+pub enum SetResultType {
     Conflict,
     Success,
 }
@@ -56,6 +57,45 @@ pub struct Clause {
     pub(crate) literals: Vec<i16>,
     pub(crate) number_of_active_literals: u8,
 }
+impl Clause {
+    pub fn is_satisfied(&self) -> bool {
+        return self.satisfiable;
+    }
+
+    /// Set the clause to true
+    ///
+    /// This function sets the clause to true and updates the variables scores.
+    /// For all the literals in the clause, the function will decrease the number of unsolved clauses of the variable.
+    pub fn set_true(&mut self, variable: usize, variables: &mut Vec<Variable>) {
+        if !self.satisfiable {
+            // we update all the variables scores and decrease the number of unsolved clauses because this is solved.
+            self.update_variables_scores(variables, -1);
+        }
+        self.satisfiable = true;
+        self.satisfied_by_variable = variable;
+    }
+
+    pub fn undo(&mut self, variable: usize, variables: &mut Vec<Variable>) -> i8 {
+        if self.satisfied_by_variable == variable {
+            self.satisfiable = false;
+            self.satisfied_by_variable = 0;
+            self.update_variables_scores(variables, 1);
+            return 1;
+        }
+        return 0;
+    }
+    fn update_variables_scores(&self, variables: &mut Vec<Variable>, value: i8) {
+        for literal in &self.literals {
+            let variable_index = literal.abs() as usize - 1;
+            let variable = &mut variables[variable_index];
+            if *literal > 0 {
+                variable.num_of_unsolved_clauses_with_positive_occurrences += value as i16;
+            } else {
+                variable.num_of_unsolved_clauses_with_negative_occurrences += value as i16;
+            }
+        }
+    }
+}
 
 /// The variable struct
 ///
@@ -66,14 +106,16 @@ pub struct Variable {
     pub(crate) value: Value,
     pub(crate) positive_occurrences: Vec<usize>,
     pub(crate) negative_occurrences: Vec<usize>,
+    pub(crate) num_of_unsolved_clauses_with_negative_occurrences: i16,
+    pub(crate) num_of_unsolved_clauses_with_positive_occurrences: i16,
     pub score: f32,
 }
 
 impl Variable {
     pub(crate) fn is_pure(&self) -> Option<PureType> {
-        if self.positive_occurrences.is_empty() {
+        if self.num_of_unsolved_clauses_with_positive_occurrences == 0 {
             Some(PureType::Negative)
-        } else if self.negative_occurrences.is_empty() {
+        } else if self.num_of_unsolved_clauses_with_negative_occurrences == 0 {
             Some(PureType::Positive)
         } else {
             None
@@ -89,6 +131,7 @@ impl Variable {
 pub struct Assignment {
     pub(crate) variable: usize,
     pub(crate) assigment_type: AssigmentType,
+    pub(crate) value: Value,
 }
 
 /// The formula struct
@@ -110,5 +153,20 @@ pub struct Formula {
 impl Formula {
     pub fn is_solved(&self) -> bool {
         return self.number_of_unsatisfied_clauses == 0;
+    }
+
+    pub fn assigment_stack_pop(&mut self) -> Option<Assignment> {
+        self.assigment_stack.pop()
+    }
+    pub fn assigment_stack_push(&mut self, assignment: Assignment) {
+        if assignment.value == Value::Null {
+            error!("Null value");
+            panic!("Null value");
+        }
+        self.assigment_stack.push(assignment);
+    }
+
+    pub fn assigment_stack_is_empty(&self) -> bool {
+        return self.assigment_stack.is_empty();
     }
 }

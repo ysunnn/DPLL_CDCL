@@ -21,17 +21,6 @@ fn bench(
     let start = time::Instant::now();
     let mut formula = Formula::from_file(&path).unwrap();
     formula.heuristic_type = h;
-    match h {
-        HeuristicType::DLIS => formula.dlis(),
-        HeuristicType::DLCS => formula.dlcs(),
-        HeuristicType::MOM => formula.mom(),
-        HeuristicType::JeroslowWang => formula.jeroslow_wang_score(),
-        HeuristicType::VSIDS => {
-            formula.heuristic_type = HeuristicType::VSIDS;
-            formula.jeroslow_wang_score()
-        }
-        HeuristicType::None => {}
-    }
 
     let timeout = Arc::new(AtomicBool::new(false));
     let timeout_copy = timeout.clone();
