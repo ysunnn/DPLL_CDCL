@@ -322,10 +322,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-            println!("before {}", gbd);
             match backtrack(formula, &mut implication_graph, &mut gbd) {
                 Ok(_) => {
-                    println!("after {}", gbd);
                     index = 0;
                 }
                 Err(result) => {
@@ -393,8 +391,8 @@ mod tests {
             edges: Vec::new(),
             conflict: None,
         };
-        //todo bd
-        set_variable_true(1, &mut formular, AssigmentType::Branching, 1);
+        //todo is bd 1?
+        set_variable_true(1, &mut formular, AssigmentType::Branching, 1, &mut implication_graph);
         assert_eq!(formular.variables[0].value, Value::True);
         assert_eq!(formular.variables[1].value, Value::Null);
         assert_eq!(formular.clauses[0].number_of_active_literals, 2);
