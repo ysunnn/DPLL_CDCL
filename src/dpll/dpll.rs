@@ -49,7 +49,7 @@ fn set_variable_false(
     variable_index: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
-    implication_graph: &mut ImplicationGraph
+    bd: usize,
 )-> SetResultType{
     debug!(target: "set_variable_false", "Set variable false: {} by: {:?}", variable_index, assigment);
     formula.variables[variable_index].value = Value::False;
@@ -57,7 +57,7 @@ fn set_variable_false(
         variable_index,
         assigment_type: assigment,
         value: Value::False,
-        depth: implication_graph.bd,
+        depth: bd,
     });
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
@@ -98,6 +98,7 @@ fn set_variable_false(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
+    bd: usize,
 ) -> SetResultType {
     set_variable(variable, formula, assigment, Value::True)
 }*/
@@ -114,6 +115,7 @@ fn set_variable_false(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
+    bd: usize,
 ) -> SetResultType {
     set_variable(variable, formula, assigment, Value::False)
 }*/
@@ -131,7 +133,7 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
 /// If we still got a Branched assigment we undo this as well empty our unit queue and set the variable to false.
 /// Then we're going back to normal and start with unit propagation and regular assignments.
-fn backtrack(formula: &mut Formula, implication_graph: &mut ImplicationGraph) -> Result<i32, FormulaResultType> {
+fn backtrack(formula: &mut Formula, implication_graph: &mut ImplicationGraph, gbd: &mut usize) -> Result<i32, FormulaResultType> {
     let mut numb_of_undone = 0;
     while let Some(top) = formula.assigment_stack_pop() {
         // Check the last element (the top of the stack)
@@ -198,7 +200,7 @@ fn backtrack(formula: &mut Formula, implication_graph: &mut ImplicationGraph) ->
 /// Eliminate pure literals
 /// A pure literal is a variable that only occurs positive or negative in the formula.
 /// If we find a pure literal we set the variable to the value that is needed to satisfy the formula.
-fn pure_literal_elimination(formula: &mut Formula) {
+fn pure_literal_elimination(formula: &mut Formula, implication_graph: &mut ImplicationGraph) {
     for index in 0..formula.variables.len() {
         let variable_index = formula.variables_index[index].0;
         let variable = &formula.variables[variable_index];
@@ -212,7 +214,7 @@ fn pure_literal_elimination(formula: &mut Formula) {
                     PureType::Positive => Value::True,
                     PureType::Negative => Value::False,
                 };
-                match set_variable(variable_index + 1, formula, AssigmentType::Branching, value) {
+                match set_variable(variable_index + 1, formula, AssigmentType::Branching, value, implication_graph) {
                     SetResultType::Success => {}
                     SetResultType::Conflict => {
                         formula.result = FormulaResultType::Unsatisfiable;
@@ -227,11 +229,13 @@ fn pure_literal_elimination(formula: &mut Formula) {
 
 pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut index = 0;
+    // Global branching depth counter
+    let mut gbd: usize = 0;
+
     let mut implication_graph = ImplicationGraph {
         assignments: Vec::new(),
         edges: Vec::new(),
         conflict: None,
-        bd: 0, // Initialize branching depth counter
     };
 
     //scan_for_units(formula);
@@ -265,7 +269,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
         gbd += 1;
-        if set_variable_true(variable_index + 1, formula, AssigmentType::Branching, gbd, &mut implication_graph)
+        if set_variable_true(variable_index, formula, AssigmentType::Branching, gbd)
             == SetResultType::Conflict
         {
             // we should never get here
@@ -318,8 +322,10 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-            match backtrack(formula, &mut implication_graph) {
+            println!("before {}", gbd);
+            match backtrack(formula, &mut implication_graph, &mut gbd) {
                 Ok(_) => {
+                    println!("after {}", gbd);
                     index = 0;
                 }
                 Err(result) => {
@@ -386,9 +392,9 @@ mod tests {
             assignments: Vec::new(),
             edges: Vec::new(),
             conflict: None,
-            bd: 0,
         };
-        set_variable_true(1, &mut formular, AssigmentType::Branching, &mut implication_graph);
+        //todo bd
+        set_variable_true(1, &mut formular, AssigmentType::Branching, 1);
         assert_eq!(formular.variables[0].value, Value::True);
         assert_eq!(formular.variables[1].value, Value::Null);
         assert_eq!(formular.clauses[0].number_of_active_literals, 2);
