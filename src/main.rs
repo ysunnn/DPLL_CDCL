@@ -62,7 +62,7 @@ fn main() {
             let start = time::Instant::now();
             let mut formula = Formula::from_file(&file).unwrap();
             formula.heuristic_type = heuristic.unwrap_or(HeuristicType::None);
-            formula.update_score();
+            //formula.update_score();
             run_dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
             info!("solved in {:?}", start.elapsed());
             println!("{}", formula.write_solution());

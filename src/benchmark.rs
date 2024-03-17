@@ -68,11 +68,6 @@ pub fn benchmark() {
     let mut out_total_counter = 0;
     for heuristic in vec![
         HeuristicType::None,
-        HeuristicType::DLIS,
-        HeuristicType::DLCS,
-        HeuristicType::MOM,
-        HeuristicType::JeroslowWang,
-        HeuristicType::VSIDS,
     ] {
         let paths = fs::read_dir("data/inputs").unwrap();
 
@@ -82,7 +77,7 @@ pub fn benchmark() {
         let total_counter = AtomicUsize::new(0);
         let solved_times: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::new()));
 
-        paths.par_bridge().for_each(|dir| {
+        paths.for_each(|dir| {
             let dir = dir.unwrap().path();
             if dir.file_name().unwrap() == "test" {
                 return;
