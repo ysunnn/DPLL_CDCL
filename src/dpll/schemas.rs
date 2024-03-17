@@ -195,16 +195,19 @@ pub(crate) struct ImplicationGraph {
 }
 
 impl ImplicationGraph {
-    fn add_assignment(&mut self, assignment: Assignment) {
+    pub fn add_assignment(&mut self, assignment: Assignment) {
         self.assignments.push(assignment);
     }
 
-    fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
+    pub fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
         let edge = Edge { reason, trigger };
         self.edges.push(edge);
     }
 
-    fn set_conflict(&mut self, clause: Clause) {
+    pub fn set_conflict(&mut self, clause: Clause) {
         self.conflict = Some(clause);
+    }
+    pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
+        self.add_assignment(new_assignment);
     }
 }
