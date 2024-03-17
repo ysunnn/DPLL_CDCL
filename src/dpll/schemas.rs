@@ -45,6 +45,12 @@ pub enum PureType {
     Negative,
 }
 
+pub enum ImplicationReason {
+    Decision,
+    LearnedClause(Clause),
+    Null, // branching assignments
+}
+
 /// The clause struct
 ///
 /// Contains the list of [`literals`](Vec<i32>), the number of [`active_literals`](i32) and the [`satisfiable`](bool) flag.
@@ -132,6 +138,7 @@ pub struct Assignment {
     pub(crate) variable: usize,
     pub(crate) assigment_type: AssigmentType,
     pub(crate) value: Value,
+    pub(crate) depth: usize,
 }
 
 /// The formula struct
@@ -168,5 +175,53 @@ impl Formula {
 
     pub fn assigment_stack_is_empty(&self) -> bool {
         return self.assigment_stack.is_empty();
+    }
+}
+
+/// The implication graph struct
+///
+/// Directed acyclic graph representing implications between assignments.
+/// Assignment vertices for variables, values, and branch depth.
+/// Edges for which clause caused the conflict and the reason().
+pub(crate) struct Edge {
+    reason: ImplicationReason,
+    trigger: Option<Assignment>, // Clause triggering the unit propagation
+}
+
+pub(crate) struct ImplicationGraph {
+    pub(crate) assignments: Vec<Assignment>,
+    pub(crate) edges: Vec<Edge>,
+    pub(crate) conflict: Option<Clause>, // Clause that caused a conflict
+    pub(crate) bd: usize, // Global branching depth counter
+}
+
+impl ImplicationGraph {
+    fn add_assignment(&mut self, variable: usize, assigment_type: AssigmentType, value: Value) {
+        let assignment = Assignment {
+            variable,
+            assigment_type,
+            value,
+            depth: self.bd,
+        };
+        self.assignments.push(assignment);
+    }
+
+    fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
+        let edge = Edge { reason, trigger };
+        self.edges.push(edge);
+    }
+
+    fn set_conflict(&mut self, clause: Clause) {
+        self.conflict = Some(clause);
+    }
+
+    // increment branching depth at each branching assignment
+    fn increment_branching_depth(&mut self) {
+        self.bd += 1;
+    }
+
+    // decrement branching depth on backtracking
+    fn decrement_branching_depth(&mut self) {
+        self.bd -= 1;
     }
 }
