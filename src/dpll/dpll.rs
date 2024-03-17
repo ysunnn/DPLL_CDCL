@@ -10,6 +10,7 @@ fn set_variable_true(
     variable_index: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
+    bd: usize,
 )-> SetResultType{
     debug!(target: "set_variable_true", "Set variable true: {} by: {:?}", variable_index, assigment);
     formula.variables[variable_index].value = Value::True;
@@ -17,6 +18,7 @@ fn set_variable_true(
         variable_index,
         assigment_type: assigment,
         value: Value::True,
+        depth: bd,
     });
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
@@ -133,7 +135,7 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
 /// If we still got a Branched assigment we undo this as well empty our unit queue and set the variable to false.
 /// Then we're going back to normal and start with unit propagation and regular assignments.
-fn backtrack(formula: &mut Formula, implication_graph: &mut ImplicationGraph, gbd: &mut usize) -> Result<i32, FormulaResultType> {
+fn backtrack(formula: &mut Formula, gbd: &mut usize) -> Result<i32, FormulaResultType> {
     let mut numb_of_undone = 0;
     while let Some(top) = formula.assigment_stack_pop() {
         // Check the last element (the top of the stack)
@@ -146,10 +148,10 @@ fn backtrack(formula: &mut Formula, implication_graph: &mut ImplicationGraph, gb
                 let result;
                 match top.value {
                     Value::True => {
-                        result = set_variable_false(top.variable_index, formula, AssigmentType::Forced)
+                        result = set_variable_false(top.variable_index, formula, AssigmentType::Forced, *gbd)
                     },
                     Value::False => {
-                        result = set_variable_true(top.variable_index, formula, AssigmentType::Forced)
+                        result = set_variable_true(top.variable_index, formula, AssigmentType::Forced, *gbd)
                     },
                     _ => panic!("Invalid value"),
                 };
@@ -273,7 +275,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             == SetResultType::Conflict
         {
             // we should never get here
-            match backtrack(formula, &mut implication_graph, &mut gbd) {
+            match backtrack(formula, &mut gbd) {
                 Ok(_) => {}
                 Err(result) => {
                     formula.result = result;
@@ -299,10 +301,10 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             let result;
             match value {
                 Value::True =>{
-                    result = set_variable_true(unit, formula, AssigmentType::Forced);
+                    result = set_variable_true(unit, formula, AssigmentType::Forced, gbd);
                 }
                 Value::False =>{
-                    result = set_variable_false(unit, formula, AssigmentType::Forced);
+                    result = set_variable_false(unit, formula, AssigmentType::Forced,gbd);
                 }
                 Value::Null =>{
                     panic!("i cannot set a unit to the value none in unit propagation")
@@ -322,7 +324,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-            match backtrack(formula, &mut implication_graph, &mut gbd) {
+            match backtrack(formula, &mut gbd) {
                 Ok(_) => {
                     index = 0;
                 }
