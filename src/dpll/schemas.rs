@@ -192,17 +192,10 @@ pub(crate) struct ImplicationGraph {
     pub(crate) assignments: Vec<Assignment>,
     pub(crate) edges: Vec<Edge>,
     pub(crate) conflict: Option<Clause>, // Clause that caused a conflict
-    pub(crate) bd: usize, // Global branching depth counter
 }
 
 impl ImplicationGraph {
-    fn add_assignment(&mut self, variable: usize, assigment_type: AssigmentType, value: Value) {
-        let assignment = Assignment {
-            variable,
-            assigment_type,
-            value,
-            depth: self.bd,
-        };
+    fn add_assignment(&mut self, assignment: Assignment) {
         self.assignments.push(assignment);
     }
 
@@ -213,15 +206,5 @@ impl ImplicationGraph {
 
     fn set_conflict(&mut self, clause: Clause) {
         self.conflict = Some(clause);
-    }
-
-    // increment branching depth at each branching assignment
-    fn increment_branching_depth(&mut self) {
-        self.bd += 1;
-    }
-
-    // decrement branching depth on backtracking
-    fn decrement_branching_depth(&mut self) {
-        self.bd -= 1;
     }
 }
