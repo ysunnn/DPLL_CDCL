@@ -1,7 +1,10 @@
-use crate::dpll::schemas::{Formula, HeuristicType, Value, Variable};
+use crate::dpll::schemas::{Formula, Variable};
 
 impl Variable {
-    pub(crate) fn dlis(&self) -> f32 {
+    /*pub(crate) fn dlis(&self) -> f32 {
+        if self.value != Value::Null {
+            return f32::MIN;
+        }
         (if self.num_of_unsolved_clauses_with_positive_occurrences
             > self.num_of_unsolved_clauses_with_negative_occurrences
         {
@@ -12,13 +15,16 @@ impl Variable {
     }
 
     pub(crate) fn dlcs(&self) -> f32 {
+        if self.value != Value::Null {
+            return f32::MIN;
+        }
         (self.num_of_unsolved_clauses_with_positive_occurrences
             + self.num_of_unsolved_clauses_with_negative_occurrences) as f32
-    }
+    }*/
 }
 
 impl Formula {
-    fn dlis(&mut self) {
+    /*fn dlis(&mut self) {
         let mut variables_index = self
             .variables
             .iter()
@@ -45,7 +51,7 @@ impl Formula {
             .variables
             .iter()
             .enumerate()
-            .map(|(index, var)| (index, var.dlcs()))
+            .map(|(index, var)| (index, var.dlcs().abs()))
             .collect::<Vec<(usize, f32)>>();
         variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
         variables_index.reverse();
@@ -127,5 +133,5 @@ impl Formula {
             HeuristicType::VSIDS => {} //self.vsids_score(),
             HeuristicType::None => {}
         }
-    }
+    }*/
 }

@@ -10,11 +10,11 @@ use std::{fs, time};
 
 pub fn test() {
     let start = time::Instant::now();
-    let path = PathBuf::from("data/inputs/test\\unsat\\tree5.cnf");
+    let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
     formula.heuristic_type = HeuristicType::MOM;
-    formula.update_score();
+    //formula.update_score();
     dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
 
     for clause in formula.clauses.iter() {
@@ -34,11 +34,11 @@ pub fn tests() {
 
     for heuristic in vec![
         HeuristicType::None,
-        HeuristicType::DLIS,
+        /*HeuristicType::DLIS,
         HeuristicType::DLCS,
         HeuristicType::MOM,
         HeuristicType::JeroslowWang,
-        HeuristicType::VSIDS,
+        HeuristicType::VSIDS,*/
     ] {
         info!("Heuristic: {:?}", heuristic);
         let dirs = fs::read_dir("data/inputs/test").unwrap();
@@ -65,7 +65,7 @@ pub fn tests() {
                 let start = time::Instant::now();
                 let mut formula = Formula::from_file(&path).unwrap();
                 formula.heuristic_type = heuristic;
-                formula.update_score();
+                //formula.update_score();
 
                 dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
                 info!("Result: {}", Formula::write_solution(&formula));

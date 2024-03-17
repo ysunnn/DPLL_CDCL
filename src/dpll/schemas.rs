@@ -1,6 +1,6 @@
 use clap::ValueEnum;
-use log::error;
-use std::collections::VecDeque;
+use log::{debug, error};
+use std::collections::{HashSet, VecDeque};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -39,88 +39,102 @@ pub enum FormulaResultType {
     Timeout,
 }
 
-#[derive(Debug)]
-pub enum PureType {
-    Positive,
-    Negative,
-}
-
 /// The clause struct
 ///
 /// Contains the list of [`literals`](Vec<i32>), the number of [`active_literals`](i32) and the [`satisfiable`](bool) flag.
 /// The [`satisfiable`](bool) flag is used to determine if the clause is satisfied.
 #[derive(Debug)]
 pub struct Clause {
-    pub(crate) satisfiable: bool,
-    pub(crate) satisfied_by_variable: usize,
     // variable start with 1  index with 0
     pub(crate) literals: Vec<i16>,
-    pub(crate) number_of_active_literals: u8,
+    // both watched are indexes to the literals of the clause
+    pub(crate) watched: (usize, usize),
 }
+
 impl Clause {
-    pub fn is_satisfied(&self) -> bool {
-        return self.satisfiable;
-    }
 
-    /// Set the clause to true
-    ///
-    /// This function sets the clause to true and updates the variables scores.
-    /// For all the literals in the clause, the function will decrease the number of unsolved clauses of the variable.
-    pub fn set_true(&mut self, variable: usize, variables: &mut Vec<Variable>) {
-        if !self.satisfiable {
-            // we update all the variables scores and decrease the number of unsolved clauses because this is solved.
-            self.update_variables_scores(variables, -1);
+    pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
+                                      variables: &mut Vec<Variable>,
+                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8 >{
+        let my_watched_index;
+        let other_watched_index;
+        debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
+        if variable_index == (self.literals[self.watched.0].abs() - 1) as usize {
+            my_watched_index = self.watched.0;
+            other_watched_index = self.watched.1;
+        } else {
+            my_watched_index = self.watched.1;
+            other_watched_index = self.watched.0;
         }
-        self.satisfiable = true;
-        self.satisfied_by_variable = variable;
-    }
-
-    pub fn undo(&mut self, variable: usize, variables: &mut Vec<Variable>) -> i8 {
-        if self.satisfied_by_variable == variable {
-            self.satisfiable = false;
-            self.satisfied_by_variable = 0;
-            self.update_variables_scores(variables, 1);
-            return 1;
-        }
-        return 0;
-    }
-    fn update_variables_scores(&self, variables: &mut Vec<Variable>, value: i8) {
-        for literal in &self.literals {
-            let variable_index = literal.abs() as usize - 1;
-            let variable = &mut variables[variable_index];
-            if *literal > 0 {
-                variable.num_of_unsolved_clauses_with_positive_occurrences += value as i16;
-            } else {
-                variable.num_of_unsolved_clauses_with_negative_occurrences += value as i16;
+        let mut maybe_unit = false;
+        debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
+        for index in my_watched_index..self.literals.len()+my_watched_index {
+            let literal_index = index % self.literals.len();
+            let lit = self.literals[literal_index];
+            let variable = &mut variables[lit.abs() as usize - 1];
+            debug!(target: "find_new_variable_to_watch", "current index: {}", index);
+            debug!(target: "find_new_variable_to_watch", "current literal_index: {}", literal_index);
+            debug!(target: "find_new_variable_to_watch", "current lit: {}", lit);
+            debug!(target: "find_new_variable_to_watch", "current variable: {:?}", variable);
+            // satisfied clause dont play a role
+            if variable.value == Value::True && lit > 0 || variable.value == Value::False && lit < 0 {
+                return Ok(None);
             }
+
+            // if the variable is not free we're looking for the next on
+            if variable.value != Value::Null {
+                continue;
+            }
+            debug!(target: "find_new_variable_to_watch", "index: {}, other_watched_index: {}", literal_index, other_watched_index);
+            if literal_index == other_watched_index {
+                debug!(target: "find_new_variable_to_watch", "this is maybe a unit");
+                maybe_unit = true;
+                continue;
+            }
+            self.watched = (literal_index, other_watched_index);
+            // Add the clause to the new variable that is watched
+            if lit > 0 {
+                variable.watched_pos_occurrences.insert(clause_index);
+            } else {
+                variable.watched_neg_occurrences.insert(clause_index);
+            }
+            let old_lit = self.literals[my_watched_index];
+            // remove the clause from the old variable that is not watched anymore !
+            if old_lit > 0 {
+                variables[old_lit.abs() as usize - 1].watched_pos_occurrences.remove(&clause_index);
+            } else {
+                variables[old_lit.abs() as usize - 1].watched_neg_occurrences.remove(&clause_index);
+            }
+            debug!(target: "find_new_variable_to_watch", "update watched variables: {:?}", self.watched);
+            return Ok(None);
         }
+
+        // conflict id maybe_unit is false
+        if maybe_unit{
+            // variable to propagate
+            let value = if self.literals[other_watched_index]>0{
+                Value::True
+            } else {
+                Value::False
+            };
+            return Ok(Some((self.literals[other_watched_index].abs() as usize - 1, value)));
+        }
+        // conflict
+        return Err(0);
     }
 }
 
 /// The variable struct
 ///
 /// Contains the value of the variable and the list of clauses where it occurs.
-/// The list of clauses is split into [`positive`](Vec<i32>) and [`negative`](Vec<i32>) occurrences.
 #[derive(Debug, Clone)]
 pub struct Variable {
     pub(crate) value: Value,
-    pub(crate) positive_occurrences: Vec<usize>,
-    pub(crate) negative_occurrences: Vec<usize>,
-    pub(crate) num_of_unsolved_clauses_with_negative_occurrences: i16,
-    pub(crate) num_of_unsolved_clauses_with_positive_occurrences: i16,
+    // a set of all indexes to clauses where the current variables occur negative and is watched
+    pub watched_neg_occurrences: HashSet<usize>,
+    // a set of all indexes to clauses where the current variables occur positive and is watched
+    pub watched_pos_occurrences: HashSet<usize>,
     pub score: f32,
-}
-
-impl Variable {
-    pub(crate) fn is_pure(&self) -> Option<PureType> {
-        if self.num_of_unsolved_clauses_with_positive_occurrences == 0 {
-            Some(PureType::Negative)
-        } else if self.num_of_unsolved_clauses_with_negative_occurrences == 0 {
-            Some(PureType::Positive)
-        } else {
-            None
-        }
-    }
 }
 
 /// The assignment struct
@@ -129,7 +143,7 @@ impl Variable {
 /// This struct is used to store the assignments in the [`assigment_stack`](Vec<Assignment>).
 #[derive(Copy, Clone, Debug)]
 pub struct Assignment {
-    pub(crate) variable: usize,
+    pub(crate) variable_index: usize,
     pub(crate) assigment_type: AssigmentType,
     pub(crate) value: Value,
 }
@@ -142,18 +156,14 @@ pub struct Assignment {
 pub struct Formula {
     pub(crate) clauses: Vec<Clause>,
     pub(crate) variables: Vec<Variable>,
-    pub(crate) units: VecDeque<i16>,
+    pub(crate) units: VecDeque<(usize, Value)>,
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
-    pub(crate) number_of_unsatisfied_clauses: i16,
     pub(crate) variables_index: Vec<(usize, f32)>,
     pub heuristic_type: HeuristicType,
 }
 
 impl Formula {
-    pub fn is_solved(&self) -> bool {
-        return self.number_of_unsatisfied_clauses == 0;
-    }
 
     pub fn assigment_stack_pop(&mut self) -> Option<Assignment> {
         self.assigment_stack.pop()

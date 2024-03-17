@@ -1,114 +1,86 @@
 use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, SetResultType,
-    Value, Variable,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType,
+    Value,
 };
 use log::debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Find the last not assign unit from a clause
-///
-/// [`variables_indexes`](Vec<usize>) is the list if variables from one clause.
-/// the numbers in the list should start with one the zero is not used. to as close on the DIMACS format.
-/// [`variables`](Vec<Variable>) is a list of all variables from the formula. this start with the index zero,
-/// where zero ist mapped to one and so on.
-/// the function panic's if there are more than one unset unit or if no unset units a found
-fn find_unit(variables: &Vec<i16>, formula_variables: &Vec<Variable>) -> i16 {
-    debug!(target: "find_unit", "Find unit for: {:?}", variables);
-    match variables
-        .iter()
-        .find(|&&variable| formula_variables[(variable.abs() - 1) as usize].value == Value::Null)
-    {
-        None => panic!("No unit found"),
-        Some(unit) => {
-            debug!(target: "find_unit", "Unit found {}", unit);
-            *unit
-        }
-    }
-}
-
-fn set_variable_and_return_index(variable: usize, formula: &mut Formula, value: Value) -> usize {
-    if variable == 0 {
-        panic!("Variable (index) cannot be 0");
-    }
-    let index = variable - 1;
-    formula.variables[index].value = value;
-    return index;
-}
-
-fn set_variable(
-    variable: usize,
+fn set_variable_true(
+    variable_index: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
-    value: Value,
-) -> SetResultType {
-    debug!(target: "set_variable", "Set variable: {} to {:?} by: {:?}", variable, value, assigment);
-    let variable_index = set_variable_and_return_index(variable, formula, value);
-
+)-> SetResultType{
+    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}", variable_index, assigment);
+    formula.variables[variable_index].value = Value::True;
     formula.assigment_stack_push(Assignment {
-        variable,
+        variable_index,
         assigment_type: assigment,
-        value,
+        value: Value::True,
     });
-
-    debug!(target: "set_variable", "{:?}", formula.variables[variable_index]);
-
-    let (positive_occurrences, negative_occurrences) = match value {
-        Value::True => (
-            formula.variables[variable_index]
-                .positive_occurrences
-                .clone(),
-            formula.variables[variable_index]
-                .negative_occurrences
-                .clone(),
-        ),
-        Value::False => (
-            formula.variables[variable_index]
-                .negative_occurrences
-                .clone(),
-            formula.variables[variable_index]
-                .positive_occurrences
-                .clone(),
-        ),
-        _ => panic!("Invalid value"),
-    };
-
     let mut result = SetResultType::Success;
-    let mut clause;
-    for index in positive_occurrences {
-        // first we set all the clauses where the variable occurs positive to satisfied
-        // so if a variable appears positive and negative in a clause we set the clause to satisfied, so we do not propagate the variable again
-        clause = &mut formula.clauses[index];
-        // set the clause to satisfied
-        if clause.is_satisfied() {
-            continue;
-        }
-        clause.set_true(variable, &mut formula.variables);
-        formula.number_of_unsatisfied_clauses -= 1;
-    }
-
-    for index in negative_occurrences {
-        clause = &mut formula.clauses[index];
-        clause.number_of_active_literals -= 1;
-
-        if clause.is_satisfied() {
-            continue;
-        }
-        match clause.number_of_active_literals {
-            0 => {
+    debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
+    for clause_index in formula.variables[variable_index].watched_neg_occurrences.clone().iter(){
+        debug!(target: "set_variable_true","clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+        match formula.clauses[*clause_index].find_new_variable_to_watch(variable_index,
+                                                                        &mut formula.variables,
+                                                                        *clause_index){
+            Ok(option) => {
+                debug!(target: "set_variable_true","result for finding new watched variable clause {}, {:?}", clause_index, option);
+                match option {
+                    Some(unit) => {
+                        formula.units.push_back(unit);
+                    }
+                    None => {
+                       continue;
+                    }
+                }
+            }
+            Err(_) => {
+                //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
             }
-            1 => {
-                formula
-                    .units
-                    .push_back(find_unit(&clause.literals, &formula.variables));
-            }
-            _ => {}
         }
     }
+    return result;
+}
 
-    //formula.update_score();
-
+fn set_variable_false(
+    variable_index: usize,
+    formula: &mut Formula,
+    assigment: AssigmentType,
+)-> SetResultType{
+    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}", variable_index, assigment);
+    formula.variables[variable_index].value = Value::False;
+    formula.assigment_stack_push(Assignment {
+        variable_index,
+        assigment_type: assigment,
+        value: Value::False,
+    });
+    let mut result = SetResultType::Success;
+    debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
+    for clause_index in formula.variables[variable_index].watched_pos_occurrences.clone().iter(){
+        debug!(target: "set_variable_false","clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+        match formula.clauses[*clause_index].find_new_variable_to_watch(variable_index,
+                                                                        &mut formula.variables,
+                                                                        *clause_index){
+            Ok(option) => {
+                debug!(target: "set_variable_false","result for finding new watched variable clause {}, {:?}", clause_index, option);
+                match option {
+                    Some(unit) => {
+                        formula.units.push_back(unit);
+                    }
+                    None => {
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+                result = SetResultType::Conflict;
+            }
+        }
+    }
     return result;
 }
 
@@ -120,13 +92,13 @@ fn set_variable(
 /// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
 /// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
 /// clause we add the variables to the unit queue for unit propagation.
-fn set_variable_true(
+/*fn set_variable_true(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
 ) -> SetResultType {
     set_variable(variable, formula, assigment, Value::True)
-}
+}*/
 
 /// Set a Variable from the formula false.
 ///
@@ -136,53 +108,20 @@ fn set_variable_true(
 /// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
 /// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
 /// clause we add the variables to the unit queue for unit propagation.
-fn set_variable_false(
+/*fn set_variable_false(
     variable: usize,
     formula: &mut Formula,
     assigment: AssigmentType,
 ) -> SetResultType {
     set_variable(variable, formula, assigment, Value::False)
-}
+}*/
 
 /// Undo the assigment of a variable for backtracking.
 /// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
 /// variable. We set the clause to not sat.
 /// for every negative occurrences in a clause we update the number of active literals by one.
-fn undo_assignment(variable: usize, value: Value, formula: &mut Formula) -> Value {
-    let variable_index = variable - 1;
-
-    let (positive_occurrences, negative_occurrences) = match value {
-        Value::True => (
-            formula.variables[variable_index]
-                .positive_occurrences
-                .clone(),
-            formula.variables[variable_index]
-                .negative_occurrences
-                .clone(),
-        ),
-        Value::False => (
-            formula.variables[variable_index]
-                .negative_occurrences
-                .clone(),
-            formula.variables[variable_index]
-                .positive_occurrences
-                .clone(),
-        ),
-        _ => panic!("Invalid value, {:?}", value),
-    };
+fn undo_assignment(variable_index: usize, formula: &mut Formula) {
     formula.variables[variable_index].value = Value::Null;
-
-    for index in positive_occurrences {
-        let clause = &mut formula.clauses[index];
-        formula.number_of_unsatisfied_clauses +=
-            clause.undo(variable, &mut formula.variables) as i16;
-    }
-
-    for index in negative_occurrences {
-        let clause = &mut formula.clauses[index];
-        clause.number_of_active_literals += 1;
-    }
-    return value;
 }
 
 /// Backtrack the forced assigment
@@ -197,28 +136,33 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
         match top.assigment_type {
             AssigmentType::Branching => {
                 // unset the last branched variable
-                let old_value = undo_assignment(top.variable, top.value, formula);
+                undo_assignment(top.variable_index, formula);
                 formula.units.clear();
-                let value = match old_value {
-                    Value::True => Value::False,
-                    Value::False => Value::True,
+                let result;
+                match top.value {
+                    Value::True => {
+                        result = set_variable_false(top.variable_index, formula, AssigmentType::Forced)
+                    },
+                    Value::False => {
+                        result = set_variable_true(top.variable_index, formula, AssigmentType::Forced)
+                    },
                     _ => panic!("Invalid value"),
                 };
-                match set_variable(top.variable, formula, AssigmentType::Forced, value) {
+                match result {
                     SetResultType::Success => {
-                        debug!(target: "backtrack", "Unset Success variable: {}", top.variable);
-                        formula.update_score();
+                        debug!(target: "backtrack", "Unset Success variable: {}", top.variable_index);
+                        //formula.update_score();
                         return Ok(numb_of_undone);
                     }
                     SetResultType::Conflict => {
-                        debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable);
+                        debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable_index);
                         if formula.assigment_stack_is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
-                                formula.vsids_score(top.variable - 1)
+                                //formula.vsids_score(top.variable_index);
                             }
                             _ => {}
                         }
@@ -228,8 +172,8 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
             AssigmentType::Forced => {
                 // Pop the element if the condition is met
                 debug!(target: "backtrack", "Undo assigment: {:?}", top);
-                undo_assignment(top.variable, top.value, formula);
-                debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable - 1]);
+                undo_assignment(top.variable_index, formula);
+                debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable_index]);
                 numb_of_undone += 1;
             }
         }
@@ -238,7 +182,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
     return Err(FormulaResultType::Unsatisfiable);
 }
 
-fn scan_for_units(formula: &mut Formula) {
+/*fn scan_for_units(formula: &mut Formula) {
     for clause in formula.clauses.iter() {
         if clause.number_of_active_literals == 1 {
             formula
@@ -276,23 +220,23 @@ fn pure_literal_elimination(formula: &mut Formula) {
             None => {}
         }
     }
-}
+}*/
 
 pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut index = 0;
-
-    scan_for_units(formula);
-    pure_literal_elimination(formula);
+    //scan_for_units(formula);
+    //pure_literal_elimination(formula);
     if formula.result == FormulaResultType::Unsatisfiable {
         return;
     }
 
     loop {
-        if formula.is_solved() {
+        debug!(target: "dpll", "current index: {}", index);
+        if index == formula.variables.len() {
             formula.result = FormulaResultType::Satisfiable;
             return;
         }
-        //debug!("current variables index: {:?}", formula.variables_index);
+        debug!("current variables index: {:?}", formula.variables_index);
         let variable_index = formula.variables_index[index].0;
 
         debug!(target: "dpll", "current variable index: {}", variable_index);
@@ -301,6 +245,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             index += 1;
             continue;
         }
+        debug!(target: "dpll", "Variable Value: {:?} ", formula.variables[variable_index]);
         if timeout.load(Ordering::SeqCst) {
             formula.result = FormulaResultType::Timeout;
             return;
@@ -309,7 +254,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // Branching type because we decided freely to set this variable!
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
-        if set_variable_true(variable_index + 1, formula, AssigmentType::Branching)
+        if set_variable_true(variable_index, formula, AssigmentType::Branching)
             == SetResultType::Conflict
         {
             // we should never get here
@@ -323,33 +268,39 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             }
         }
         //pure_literal_elimination(formula);
-        formula.update_score();
+        //formula.update_score();
 
         index = 0;
         // propagate the units that have to be true now
         // propagate the units that have to be true now
-        while let Some(unit) = formula.units.pop_front() {
+        while let Some((unit, value)) = formula.units.pop_front() {
             // Forced Assigment because of unit propagation !
             //let unit = formula.units.pop_front().unwrap();
-            if formula.variables[(unit.abs() - 1) as usize].value != Value::Null {
+            if formula.variables[unit].value != Value::Null {
                 debug!(target: "dpll", "Variable: {} is already set", variable_index + 1);
                 continue;
             }
             debug!(target: "dpll", "Unit propagation: {}", unit);
             let result;
-            if unit > 0 {
-                result = set_variable_true(unit.abs() as usize, formula, AssigmentType::Forced);
-            } else {
-                result = set_variable_false(unit.abs() as usize, formula, AssigmentType::Forced);
+            match value {
+                Value::True =>{
+                    result = set_variable_true(unit, formula, AssigmentType::Forced);
+                }
+                Value::False =>{
+                    result = set_variable_false(unit, formula, AssigmentType::Forced);
+                }
+                Value::Null =>{
+                    panic!("i cannot set a unit to the value none in unit propagation")
+                }
             }
             //pure_literal_elimination(formula);
-            formula.update_score();
+            //formula.update_score();
             if result == SetResultType::Success {
                 continue;
             }
             match formula.heuristic_type {
                 HeuristicType::VSIDS => {
-                    formula.vsids_score((unit.abs() - 1) as usize);
+                    //formula.vsids_score((unit.abs() - 1) as usize);
                 }
                 _ => {}
             }

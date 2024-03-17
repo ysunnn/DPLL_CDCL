@@ -17,10 +17,8 @@ impl Variable {
     fn new() -> Self {
         Self {
             value: Value::Null,
-            positive_occurrences: Vec::new(),
-            negative_occurrences: Vec::new(),
-            num_of_unsolved_clauses_with_negative_occurrences: 0,
-            num_of_unsolved_clauses_with_positive_occurrences: 0,
+            watched_neg_occurrences: HashSet::new(),
+            watched_pos_occurrences: HashSet::new(),
             score: 0.0,
         }
     }
@@ -42,23 +40,37 @@ impl Clause {
                 continue;
             }
             literals_set.insert(lit);
-            let var = lit.abs() as usize;
-            if lit > 0 {
-                // DIMACS CNF format's variables are numbered from 1
-                // but the variables are numbered from 0
-                variables[var - 1].positive_occurrences.push(clause_index);
-                variables[var - 1].num_of_unsolved_clauses_with_positive_occurrences += 1;
-            } else {
-                variables[var - 1].negative_occurrences.push(clause_index);
-                variables[var - 1].num_of_unsolved_clauses_with_negative_occurrences += 1;
-            }
         }
+
         let literals: Vec<i16> = literals_set.into_iter().collect();
+        let watched;
+        if literals.len() == 1 {
+            let lit = literals[0];
+            if lit > 0 {
+                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
+            }else {
+                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+            }
+            watched = (0,0);
+        }else{
+            let lit = literals[0];
+            if lit > 0 {
+                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
+            }else {
+                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+            }
+            let lit = literals[1];
+            if lit > 0 {
+                variables[(literals[1].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
+            }else {
+                variables[(literals[1].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+            }
+            watched = (0,1);
+        }
+
         Self {
-            satisfiable: false,
-            satisfied_by_variable: 0,
-            number_of_active_literals: literals.len() as u8,
             literals,
+            watched,
         }
     }
 }
@@ -122,7 +134,6 @@ impl Formula {
             .collect::<Vec<(usize, f32)>>();
 
         Ok(Self {
-            number_of_unsatisfied_clauses: clauses.len() as i16,
             assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
             variables,
