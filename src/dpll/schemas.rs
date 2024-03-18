@@ -134,6 +134,8 @@ pub struct Variable {
     pub watched_neg_occurrences: HashSet<usize>,
     // a set of all indexes to clauses where the current variables occur positive and is watched
     pub watched_pos_occurrences: HashSet<usize>,
+    pub(crate) positive_occurrences: Vec<usize>,
+    pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
 }
 

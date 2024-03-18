@@ -162,7 +162,7 @@ fn backtrack(formula: &mut Formula) -> Result<i32, FormulaResultType> {
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
-                                //formula.vsids_score(top.variable_index);
+                                formula.vsids_score(top.variable_index);
                             }
                             _ => {}
                         }
@@ -300,7 +300,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             }
             match formula.heuristic_type {
                 HeuristicType::VSIDS => {
-                    //formula.vsids_score((unit.abs() - 1) as usize);
+                    formula.vsids_score(unit);
                 }
                 _ => {}
             }

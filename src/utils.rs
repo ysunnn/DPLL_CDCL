@@ -19,6 +19,8 @@ impl Variable {
             value: Value::Null,
             watched_neg_occurrences: HashSet::new(),
             watched_pos_occurrences: HashSet::new(),
+            positive_occurrences: Vec::new(),
+            negative_occurrences: Vec::new(),
             score: 0.0,
         }
     }
@@ -40,6 +42,14 @@ impl Clause {
                 continue;
             }
             literals_set.insert(lit);
+            let var = lit.abs() as usize;
+            if lit > 0 {
+                // DIMACS CNF format's variables are numbered from 1
+                // but the variables are numbered from 0
+                variables[var - 1].positive_occurrences.push(clause_index);
+            } else {
+                variables[var - 1].negative_occurrences.push(clause_index);
+            }
         }
 
         let literals: Vec<i16> = literals_set.into_iter().collect();
