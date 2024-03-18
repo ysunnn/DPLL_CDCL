@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crate::dpll::schemas::{
     AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType,
     Value, Variable, ImplicationGraph,
+    AssigmentType, Assignment, Formula, HeuristicType, SetResultType, Value,
 };
 use log::debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,11 +32,17 @@ fn set_variable_true(
     }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
-    for clause_index in formula.variables[variable_index].watched_neg_occurrences.clone().iter(){
+    for clause_index in formula.variables[variable_index]
+        .watched_neg_occurrences
+        .clone()
+        .iter()
+    {
         debug!(target: "set_variable_true","clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-        match formula.clauses[*clause_index].find_new_variable_to_watch(variable_index,
-                                                                        &mut formula.variables,
-                                                                        *clause_index){
+        match formula.clauses[*clause_index].find_new_variable_to_watch(
+            variable_index,
+            &mut formula.variables,
+            *clause_index,
+        ) {
             Ok(option) => {
                 debug!(target: "set_variable_true","result for finding new watched variable clause {}, {:?}", clause_index, option);
                 match option {
@@ -43,7 +50,7 @@ fn set_variable_true(
                         formula.units.push_back(unit);
                     }
                     None => {
-                       continue;
+                        continue;
                     }
                 }
             }
@@ -81,11 +88,17 @@ fn set_variable_false(
     }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
-    for clause_index in formula.variables[variable_index].watched_pos_occurrences.clone().iter(){
+    for clause_index in formula.variables[variable_index]
+        .watched_pos_occurrences
+        .clone()
+        .iter()
+    {
         debug!(target: "set_variable_false","clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-        match formula.clauses[*clause_index].find_new_variable_to_watch(variable_index,
-                                                                        &mut formula.variables,
-                                                                        *clause_index){
+        match formula.clauses[*clause_index].find_new_variable_to_watch(
+            variable_index,
+            &mut formula.variables,
+            *clause_index,
+        ) {
             Ok(option) => {
                 debug!(target: "set_variable_false","result for finding new watched variable clause {}, {:?}", clause_index, option);
                 match option {
@@ -203,7 +216,6 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                 debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable_index]);
                 numb_of_undone += 1;
             }
-            _ => {}
         }
     }
     debug!(target: "backtrack", "Backtrack finished");
@@ -223,7 +235,7 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
 /// Eliminate pure literals
 /// A pure literal is a variable that only occurs positive or negative in the formula.
 /// If we find a pure literal we set the variable to the value that is needed to satisfy the formula.
-fn pure_literal_elimination(formula: &mut Formula, implication_graph: &mut ImplicationGraph) {
+fn pure_literal_elimination(formula: &mut Formula) {
     for index in 0..formula.variables.len() {
         let variable_index = formula.variables_index[index].0;
         let variable = &formula.variables[variable_index];
@@ -237,7 +249,7 @@ fn pure_literal_elimination(formula: &mut Formula, implication_graph: &mut Impli
                     PureType::Positive => Value::True,
                     PureType::Negative => Value::False,
                 };
-                match set_variable(variable_index + 1, formula, AssigmentType::Branching, value, implication_graph) {
+                match set_variable(variable_index + 1, formula, AssigmentType::Branching, value) {
                     SetResultType::Success => {}
                     SetResultType::Conflict => {
                         formula.result = FormulaResultType::Unsatisfiable;

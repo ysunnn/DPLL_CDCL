@@ -60,9 +60,12 @@ pub struct Clause {
 }
 
 impl Clause {
-    pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
-                                      variables: &mut Vec<Variable>,
-                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8> {
+    pub fn find_new_variable_to_watch(
+        &mut self,
+        variable_index: usize,
+        variables: &mut Vec<Variable>,
+        clause_index: usize,
+    ) -> Result<Option<(usize, Value)>, i8> {
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -74,17 +77,20 @@ impl Clause {
             other_watched_index = self.watched.0;
         }
         let mut maybe_unit = false;
+        let old_lit = self.literals[my_watched_index];
+        let old_lit_pos = old_lit > 0;
         debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
-        for index in my_watched_index..self.literals.len() + my_watched_index {
-            let literal_index = index % self.literals.len();
+        for literal_index in 0..self.literals.len() {
             let lit = self.literals[literal_index];
             let variable = &mut variables[lit.abs() as usize - 1];
-            debug!(target: "find_new_variable_to_watch", "current index: {}", index);
             debug!(target: "find_new_variable_to_watch", "current literal_index: {}", literal_index);
             debug!(target: "find_new_variable_to_watch", "current lit: {}", lit);
             debug!(target: "find_new_variable_to_watch", "current variable: {:?}", variable);
             // satisfied clause dont play a role
-            if variable.value == Value::True && lit > 0 || variable.value == Value::False && lit < 0 {
+            let lit_pos = lit > 0;
+            let lit_neq = lit < 0;
+            if variable.value == Value::True && lit_pos || variable.value == Value::False && lit_neq
+            {
                 return Ok(None);
             }
 
@@ -100,17 +106,21 @@ impl Clause {
             }
             self.watched = (literal_index, other_watched_index);
             // Add the clause to the new variable that is watched
-            if lit > 0 {
+            if lit_pos {
                 variable.watched_pos_occurrences.insert(clause_index);
             } else {
                 variable.watched_neg_occurrences.insert(clause_index);
             }
-            let old_lit = self.literals[my_watched_index];
+
             // remove the clause from the old variable that is not watched anymore !
-            if old_lit > 0 {
-                variables[old_lit.abs() as usize - 1].watched_pos_occurrences.remove(&clause_index);
+            if old_lit_pos {
+                variables[old_lit.abs() as usize - 1]
+                    .watched_pos_occurrences
+                    .remove(&clause_index);
             } else {
-                variables[old_lit.abs() as usize - 1].watched_neg_occurrences.remove(&clause_index);
+                variables[old_lit.abs() as usize - 1]
+                    .watched_neg_occurrences
+                    .remove(&clause_index);
             }
             debug!(target: "find_new_variable_to_watch", "update watched variables: {:?}", self.watched);
             return Ok(None);
@@ -124,7 +134,10 @@ impl Clause {
             } else {
                 Value::False
             };
-            return Ok(Some((self.literals[other_watched_index].abs() as usize - 1, value)));
+            return Ok(Some((
+                self.literals[other_watched_index].abs() as usize - 1,
+                value,
+            )));
         }
         // conflict
         return Err(0);

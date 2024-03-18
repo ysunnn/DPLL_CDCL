@@ -58,31 +58,40 @@ impl Clause {
         if literals.len() == 1 {
             let lit = literals[0];
             if lit > 0 {
-                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
-            watched = (0,0);
-        }else{
+            watched = (0, 0);
+        } else {
             let lit = literals[0];
             if lit > 0 {
-                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
             let lit = literals[1];
             if lit > 0 {
-                variables[(literals[1].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[1].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[1].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[1].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
-            watched = (0,1);
+            watched = (0, 1);
         }
 
-        Self {
-            literals,
-            watched,
-        }
+        Self { literals, watched }
     }
 }
 
