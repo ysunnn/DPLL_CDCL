@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::dpll::schemas::{
     AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType,
     Value, Variable, ImplicationGraph,
@@ -25,7 +26,8 @@ fn set_variable_true(
     formula.assigment_stack_push(assignment);
     match assigment_type {
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment)
+        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment),
+        _ => {}
     }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
@@ -48,6 +50,7 @@ fn set_variable_true(
             Err(_) => {
                 //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
+                implication_graph.create_conflict_vertex(formula, variable_index, bd);
             }
         }
     }
@@ -73,7 +76,8 @@ fn set_variable_false(
     formula.assigment_stack_push(assignment);
     match assigment_type {
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment)
+        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment),
+        _ => {}
     }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
@@ -96,6 +100,7 @@ fn set_variable_false(
             Err(_) => {
                 //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
+                implication_graph.create_conflict_vertex(formula, variable_index, bd);
             }
         }
     }
@@ -180,6 +185,7 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                         if formula.assigment_stack_is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
+                        implication_graph.create_conflict_vertex(formula, top.variable_index, top.depth);
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
@@ -197,6 +203,7 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                 debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable_index]);
                 numb_of_undone += 1;
             }
+            _ => {}
         }
     }
     debug!(target: "backtrack", "Backtrack finished");
@@ -249,8 +256,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut gbd: usize = 0;
 
     let mut implication_graph = ImplicationGraph {
-        assignments: Vec::new(),
-        edges: Vec::new(),
+        assignments: HashMap::new(),
+        edges: HashMap::new(),
         conflict: None,
     };
 
@@ -290,6 +297,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             == SetResultType::Conflict
         {
             // we should never get here
+            implication_graph.create_conflict_vertex(formula, variable_index, gbd);
             match backtrack(formula, &mut gbd, &mut implication_graph) {
                 Ok(_) => {}
                 Err(result) => {

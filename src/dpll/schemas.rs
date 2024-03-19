@@ -1,6 +1,7 @@
 use clap::ValueEnum;
 use log::{debug, error};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use crate::dpll::schemas::Value::Null;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -23,6 +24,7 @@ pub enum HeuristicType {
 pub enum AssigmentType {
     Forced,
     Branching,
+    Null, // for conflict vertex
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -42,7 +44,7 @@ pub enum FormulaResultType {
 pub enum ImplicationReason {
     Decision,
     LearnedClause(usize),
-    Null, // branching assignments
+    Null,
 }
 
 /// The clause struct
@@ -58,10 +60,9 @@ pub struct Clause {
 }
 
 impl Clause {
-
     pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
                                       variables: &mut Vec<Variable>,
-                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8 >{
+                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8> {
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -74,7 +75,7 @@ impl Clause {
         }
         let mut maybe_unit = false;
         debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
-        for index in my_watched_index..self.literals.len()+my_watched_index {
+        for index in my_watched_index..self.literals.len() + my_watched_index {
             let literal_index = index % self.literals.len();
             let lit = self.literals[literal_index];
             let variable = &mut variables[lit.abs() as usize - 1];
@@ -116,9 +117,9 @@ impl Clause {
         }
 
         // conflict id maybe_unit is false
-        if maybe_unit{
+        if maybe_unit {
             // variable to propagate
-            let value = if self.literals[other_watched_index]>0{
+            let value = if self.literals[other_watched_index] > 0 {
                 Value::True
             } else {
                 Value::False
@@ -174,7 +175,6 @@ pub struct Formula {
 }
 
 impl Formula {
-
     pub fn assigment_stack_pop(&mut self) -> Option<Assignment> {
         self.assigment_stack.pop()
     }
@@ -194,56 +194,62 @@ impl Formula {
 /// The implication graph struct
 ///
 /// Directed acyclic graph representing implications between assignments.
-/// Assignment vertices for variables, values, and branch depth.
-/// Edges for which clause caused the conflict and the reason().
-pub(crate) struct Edge {
-    reason: ImplicationReason,
-    trigger: Option<Assignment>, // Clause triggering the unit propagation
-}
-
 pub(crate) struct ImplicationGraph {
-    pub(crate) assignments: Vec<Assignment>,
-    pub(crate) edges: Vec<Edge>,
+    pub(crate) assignments: HashMap<usize, Assignment>,
+    pub(crate) edges: HashMap<(usize, usize), ImplicationReason>,
+    // key(from, to) for variable index, variable index in assignment
     pub(crate) conflict: Option<Clause>, // Clause that caused a conflict
 }
 
 impl ImplicationGraph {
     fn add_assignment(&mut self, assignment: Assignment) {
-        self.assignments.push(assignment);
+        self.assignments.insert(assignment.variable_index, assignment);
     }
 
-    fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
-        let edge = Edge { reason, trigger };
-        self.edges.push(edge);
+    fn add_edge(&mut self, reason: ImplicationReason, from: usize, to: usize) {
+        self.edges.insert((from, to), reason);
     }
-
-    pub fn set_conflict(&mut self, clause: Clause) {
+    fn set_conflict(&mut self, clause: Clause) {
         self.conflict = Some(clause);
+    }
+    fn update_graph_for_occurrences(
+        &mut self,
+        formula: &Formula,
+        assignment: &Assignment,
+        occurrences: &[usize],
+    ) {
+        for &clause_index in occurrences {
+            for &literal in &formula.clauses[clause_index].literals {
+                let var_index = (literal.abs() - 1) as usize;
+                if self.assignments.contains_key(&var_index) && &formula.variables[var_index].depth <= &assignment.depth {
+                    self.add_edge(ImplicationReason::LearnedClause(clause_index), var_index, assignment.variable_index);
+                    debug!(target: "update_graph_for_unit_propagation", "new edge added from {} to {}",var_index, assignment.variable_index)
+                }
+            }
+        }
     }
     pub fn update_graph_for_branching(&mut self, new_assignment: Assignment) {
         self.add_assignment(new_assignment);
     }
     pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
-        self.add_assignment(new_assignment);
-        fn process_occurrences(
-            graph: &mut ImplicationGraph,
-            formula: &Formula,
-            assignment: &Assignment,
-            occurrences: &[usize],
-        ) {
-            for &clause_index in occurrences {
-                for &literal in &formula.clauses[clause_index].literals {
-                    let literal_index = (literal.abs() - 1) as usize;
-                    if &formula.variables[literal_index].depth <= &assignment.depth {
-                        graph.add_edge(ImplicationReason::LearnedClause(clause_index), Some(*assignment));
-                    }
-                }
-            }
-        }
-
         let variable_index = new_assignment.variable_index;
-        process_occurrences(self, formula, &new_assignment, &formula.variables[variable_index].positive_occurrences);
-        process_occurrences(self, formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].positive_occurrences);
+        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.add_assignment(new_assignment);
+    }
+    pub fn create_conflict_vertex(&mut self, formula: &mut Formula, variable_index: usize, bd: usize,) {
+        if self.assignments.contains_key(&variable_index) {
+            self.assignments.remove(&variable_index);
+        }
+        let empty_assignment = Assignment {
+            variable_index,
+            assigment_type: AssigmentType::Null,
+            value: Null,
+            depth: bd,
+        };
+        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].positive_occurrences);
+        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.add_assignment(empty_assignment);
     }
 }
 

@@ -10,7 +10,8 @@ use std::{fs, time};
 
 pub fn test() {
     let start = time::Instant::now();
-    let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
+    //let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
+    let path = PathBuf::from("data/inputs/sample_c.txt");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
     formula.heuristic_type = HeuristicType::MOM;
