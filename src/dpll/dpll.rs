@@ -13,7 +13,7 @@ fn set_variable_true(
     bd: usize,
     implication_graph: & mut ImplicationGraph,
 )-> SetResultType{
-    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}", variable_index, assigment_type);
+    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::True;
     formula.variables[variable_index].depth = bd;
     let assignment = Assignment {
@@ -61,7 +61,7 @@ fn set_variable_false(
     bd: usize,
     implication_graph: & mut ImplicationGraph,
 )-> SetResultType{
-    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}", variable_index, assigment_type);
+    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::False;
     formula.variables[variable_index].depth = bd;
     let assignment = Assignment {
