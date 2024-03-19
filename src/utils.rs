@@ -43,6 +43,14 @@ impl Clause {
                 continue;
             }
             literals_set.insert(lit);
+            let var = lit.abs() as usize;
+            if lit > 0 {
+                // DIMACS CNF format's variables are numbered from 1
+                // but the variables are numbered from 0
+                variables[var - 1].positive_occurrences.push(clause_index);
+            } else {
+                variables[var - 1].negative_occurrences.push(clause_index);
+            }
         }
 
         let literals: Vec<i16> = literals_set.into_iter().collect();

@@ -13,7 +13,7 @@ pub fn test() {
     let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
-    formula.heuristic_type = HeuristicType::None;
+    formula.heuristic_type = HeuristicType::MOM;
     //formula.update_score();
     dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
 

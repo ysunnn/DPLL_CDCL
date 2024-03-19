@@ -86,7 +86,7 @@ impl Formula {
             .collect();
 
         self.variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
-    }
+    }*/
 
     pub fn vsids_score(&mut self, variables_index: usize) {
         let decay_factor: f32 = 0.95;
@@ -123,7 +123,7 @@ impl Formula {
         }
         self.variables_index.sort_by(|a, b| b.1.total_cmp(&a.1));
     }
-
+    /*
     pub fn update_score(&mut self) {
         match self.heuristic_type {
             HeuristicType::DLIS => self.dlis(),

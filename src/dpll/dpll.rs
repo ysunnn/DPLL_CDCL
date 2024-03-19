@@ -1,5 +1,5 @@
 use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, SetResultType,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType,
     Value, Variable, ImplicationGraph,
 };
 use log::debug;
@@ -12,7 +12,7 @@ fn set_variable_true(
     assigment_type: AssigmentType,
     bd: usize,
     implication_graph: & mut ImplicationGraph,
-) -> SetResultType{
+)-> SetResultType{
     debug!(target: "set_variable_true", "Set variable true: {} by: {:?}", variable_index, assigment_type);
     formula.variables[variable_index].value = Value::True;
     formula.variables[variable_index].depth = bd;
@@ -60,7 +60,7 @@ fn set_variable_false(
     assigment_type: AssigmentType,
     bd: usize,
     implication_graph: & mut ImplicationGraph,
-) -> SetResultType{
+)-> SetResultType{
     debug!(target: "set_variable_false", "Set variable false: {} by: {:?}", variable_index, assigment_type);
     formula.variables[variable_index].value = Value::False;
     formula.variables[variable_index].depth = bd;
@@ -72,9 +72,8 @@ fn set_variable_false(
     };
     formula.assigment_stack_push(assignment);
     match assigment_type {
-        //todo formula & index vs formula.variables[variable_index]
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula, assignment)
+        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment)
     }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
@@ -184,7 +183,7 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
-                                //formula.vsids_score(top.variable_index);
+                                formula.vsids_score(top.variable_index);
                             }
                             _ => {}
                         }
@@ -256,7 +255,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     };
 
     //scan_for_units(formula);
-    //pure_literal_elimination(formula, &mut implication_graph);
+    //pure_literal_elimination(formula);
+
     if formula.result == FormulaResultType::Unsatisfiable {
         return;
     }
@@ -332,7 +332,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             }
             match formula.heuristic_type {
                 HeuristicType::VSIDS => {
-                    //formula.vsids_score((unit.abs() - 1) as usize);
+                    formula.vsids_score(unit);
                 }
                 _ => {}
             }

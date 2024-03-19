@@ -39,12 +39,6 @@ pub enum FormulaResultType {
     Timeout,
 }
 
-#[derive(Debug)]
-pub enum PureType {
-    Positive,
-    Negative,
-}
-
 pub enum ImplicationReason {
     Decision,
     LearnedClause(usize),
@@ -64,9 +58,10 @@ pub struct Clause {
 }
 
 impl Clause {
+
     pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
                                       variables: &mut Vec<Variable>,
-                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8> {
+                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8 >{
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -79,7 +74,7 @@ impl Clause {
         }
         let mut maybe_unit = false;
         debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
-        for index in my_watched_index..self.literals.len() + my_watched_index {
+        for index in my_watched_index..self.literals.len()+my_watched_index {
             let literal_index = index % self.literals.len();
             let lit = self.literals[literal_index];
             let variable = &mut variables[lit.abs() as usize - 1];
@@ -121,9 +116,9 @@ impl Clause {
         }
 
         // conflict id maybe_unit is false
-        if maybe_unit {
+        if maybe_unit{
             // variable to propagate
-            let value = if self.literals[other_watched_index] > 0 {
+            let value = if self.literals[other_watched_index]>0{
                 Value::True
             } else {
                 Value::False
@@ -149,8 +144,6 @@ pub struct Variable {
     pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
     pub depth: usize,
-
-}
 
 /// The assignment struct
 ///
@@ -180,6 +173,7 @@ pub struct Formula {
 }
 
 impl Formula {
+
     pub fn assigment_stack_pop(&mut self) -> Option<Assignment> {
         self.assigment_stack.pop()
     }

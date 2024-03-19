@@ -68,6 +68,7 @@ pub fn benchmark() {
     let mut out_total_counter = 0;
     for heuristic in vec![
         HeuristicType::None,
+        HeuristicType::VSIDS,
     ] {
         let paths = fs::read_dir("data/inputs").unwrap();
 
