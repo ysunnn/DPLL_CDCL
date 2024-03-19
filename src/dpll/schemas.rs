@@ -47,7 +47,7 @@ pub enum PureType {
 
 pub enum ImplicationReason {
     Decision,
-    LearnedClause(Clause),
+    LearnedClause(usize),
     Null, // branching assignments
 }
 
@@ -64,10 +64,9 @@ pub struct Clause {
 }
 
 impl Clause {
-
     pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
                                       variables: &mut Vec<Variable>,
-                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8 >{
+                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8> {
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -80,7 +79,7 @@ impl Clause {
         }
         let mut maybe_unit = false;
         debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
-        for index in my_watched_index..self.literals.len()+my_watched_index {
+        for index in my_watched_index..self.literals.len() + my_watched_index {
             let literal_index = index % self.literals.len();
             let lit = self.literals[literal_index];
             let variable = &mut variables[lit.abs() as usize - 1];
@@ -122,9 +121,9 @@ impl Clause {
         }
 
         // conflict id maybe_unit is false
-        if maybe_unit{
+        if maybe_unit {
             // variable to propagate
-            let value = if self.literals[other_watched_index]>0{
+            let value = if self.literals[other_watched_index] > 0 {
                 Value::True
             } else {
                 Value::False
@@ -146,7 +145,11 @@ pub struct Variable {
     pub watched_neg_occurrences: HashSet<usize>,
     // a set of all indexes to clauses where the current variables occur positive and is watched
     pub watched_pos_occurrences: HashSet<usize>,
+    pub(crate) positive_occurrences: Vec<usize>,
+    pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
+    pub depth: usize,
+
 }
 
 /// The assignment struct
@@ -177,7 +180,6 @@ pub struct Formula {
 }
 
 impl Formula {
-
     pub fn assigment_stack_pop(&mut self) -> Option<Assignment> {
         self.assigment_stack.pop()
     }
@@ -211,11 +213,11 @@ pub(crate) struct ImplicationGraph {
 }
 
 impl ImplicationGraph {
-    pub fn add_assignment(&mut self, assignment: Assignment) {
+    fn add_assignment(&mut self, assignment: Assignment) {
         self.assignments.push(assignment);
     }
 
-    pub fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
+    fn add_edge(&mut self, reason: ImplicationReason, trigger: Option<Assignment>) {
         let edge = Edge { reason, trigger };
         self.edges.push(edge);
     }
@@ -223,7 +225,30 @@ impl ImplicationGraph {
     pub fn set_conflict(&mut self, clause: Clause) {
         self.conflict = Some(clause);
     }
-    pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
+    pub fn update_graph_for_branching(&mut self, new_assignment: Assignment) {
         self.add_assignment(new_assignment);
     }
+    pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
+        self.add_assignment(new_assignment);
+        fn process_occurrences(
+            graph: &mut ImplicationGraph,
+            formula: &Formula,
+            assignment: &Assignment,
+            occurrences: &[usize],
+        ) {
+            for &clause_index in occurrences {
+                for &literal in &formula.clauses[clause_index].literals {
+                    let literal_index = (literal.abs() - 1) as usize;
+                    if &formula.variables[literal_index].depth <= &assignment.depth {
+                        graph.add_edge(ImplicationReason::LearnedClause(clause_index), Some(*assignment));
+                    }
+                }
+            }
+        }
+
+        let variable_index = new_assignment.variable_index;
+        process_occurrences(self, formula, &new_assignment, &formula.variables[variable_index].positive_occurrences);
+        process_occurrences(self, formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
+    }
 }
+

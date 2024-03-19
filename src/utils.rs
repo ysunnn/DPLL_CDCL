@@ -19,7 +19,10 @@ impl Variable {
             value: Value::Null,
             watched_neg_occurrences: HashSet::new(),
             watched_pos_occurrences: HashSet::new(),
+            positive_occurrences: Vec::new(),
+            negative_occurrences: Vec::new(),
             score: 0.0,
+            depth: 0,
         }
     }
 }
