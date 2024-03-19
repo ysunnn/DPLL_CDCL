@@ -57,6 +57,8 @@ fn set_variable_true(
             Err(_) => {
                 //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
+                // Update clauses activity for BerkMin's
+                formula.clauses[*clause_index].activity += 1;
                 implication_graph.create_conflict_vertex(formula, variable_index, bd);
             }
         }
@@ -114,6 +116,8 @@ fn set_variable_false(
                 //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
                 implication_graph.create_conflict_vertex(formula, variable_index, bd);
+                // Update clauses activity for BerkMin's
+                formula.clauses[*clause_index].activity += 1;
             }
         }
     }
@@ -160,6 +164,10 @@ fn set_variable_false(
 /// for every negative occurrences in a clause we update the number of active literals by one.
 fn undo_assignment(variable_index: usize, formula: &mut Formula) {
     formula.variables[variable_index].value = Value::Null;
+    // somewhere here we have to check the number of assigned variables for the clauses to delete
+    // it if it's a learned one with a length greater than k and less than m literates are assigned.
+    // what do we do when we have to remove it from the assigment stack?
+    // maybe only remove variables after backtracking?
 }
 
 /// Backtrack the forced assigment
@@ -220,6 +228,37 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
     }
     debug!(target: "backtrack", "Backtrack finished");
     return Err(FormulaResultType::Unsatisfiable);
+}
+
+fn berk_mins_clause_deletion_strategies(formular: &mut Formula, threshold: u16) {
+    if formular.original_clause_vector_length == formular.clauses.len() {
+        debug!(target: "berk_mins_clause_deletion_strategies", "there a no learned clauses so there can not be removed any");
+        return;
+    }
+    let diff = formular.clauses.len() - formular.original_clause_vector_length;
+    // I am not sure if this is the right way to get the first 1/16 of all new learned clauses ???
+    let first_sixteentel = diff / 16;
+    // iterate over all new learned clauses
+    let mut vec: Vec<usize> = Vec::with_capacity(diff);
+    for (index, clause_index) in
+        (formular.original_clause_vector_length..formular.clauses.len()).enumerate()
+    {
+        let clause = &formular.clauses[clause_index];
+        if index <= first_sixteentel {
+            // old
+            if clause.activity <= threshold && clause.literals.len() > 8 {
+                vec.push(clause_index);
+            }
+        } else {
+            // jung
+            if clause.activity <= 7 && clause.literals.len() > 42 {
+                vec.push(clause_index);
+            }
+        }
+    }
+    for clause_index in vec {
+        formular.delete_clauses(clause_index);
+    }
 }
 
 /*fn scan_for_units(formula: &mut Formula) {

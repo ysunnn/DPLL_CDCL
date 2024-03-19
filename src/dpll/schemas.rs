@@ -40,6 +40,11 @@ pub enum FormulaResultType {
     Satisfiable,
     Timeout,
 }
+#[derive(PartialEq, Debug)]
+pub enum ClauseType {
+    Original,
+    Learned,
+}
 
 pub enum ImplicationReason {
     Decision,
@@ -57,6 +62,8 @@ pub struct Clause {
     pub(crate) literals: Vec<i16>,
     // both watched are indexes to the literals of the clause
     pub(crate) watched: (usize, usize),
+    pub clause_type: ClauseType,
+    pub activity: u16,
 }
 
 impl Clause {
@@ -185,6 +192,7 @@ pub struct Formula {
     pub(crate) result: FormulaResultType,
     pub(crate) variables_index: Vec<(usize, f32)>,
     pub heuristic_type: HeuristicType,
+    pub original_clause_vector_length: usize,
 }
 
 impl Formula {
@@ -199,6 +207,103 @@ impl Formula {
         self.assigment_stack.push(assignment);
     }
 
+    /// Add a new learned clause to the formular by a list of literates,
+    /// all dependent variables get updated accordingly.
+    pub fn add_clauses(&mut self, literals: Vec<i16>) {
+        // TODO remove for release only for testing
+        if literals.len() < 2 {
+            panic!(
+                "It doesnt make sense to add an clause that has only one literal ! {:?}",
+                literals
+            )
+        }
+        let clause_index = self.clauses.len();
+        // UPDATE all variables that appear in the new clause
+        // Do wee need to update all variables or only the watched ones ??
+        for lit in &literals {
+            let variables_index = (lit.abs() - 1) as usize;
+            if *lit > 0 {
+                self.variables[variables_index]
+                    .positive_occurrences
+                    .push(clause_index);
+                if *lit == literals[0] || *lit == literals[1] {
+                    self.variables[variables_index]
+                        .watched_pos_occurrences
+                        .insert(clause_index);
+                }
+            } else {
+                self.variables[variables_index]
+                    .negative_occurrences
+                    .push(clause_index);
+                if *lit == literals[0] || *lit == literals[1] {
+                    self.variables[variables_index]
+                        .watched_neg_occurrences
+                        .insert(clause_index);
+                }
+            }
+        }
+
+        let clause = Clause {
+            literals,
+            watched: (0, 1),
+            clause_type: ClauseType::Learned,
+            activity: 0,
+        };
+        self.clauses.push(clause);
+    }
+    /// Removes a learned clause from the formular by the clause index it panics if the index auf the
+    /// clauses points to an original clauses!
+    /// Also, the operation of deleting the clause index from the positive and negativ occurrences
+    /// are really expressive, we first have to find the index of the value to remove it ...
+    pub fn delete_clauses(&mut self, clause_index: usize) {
+        if self.clauses[clause_index].clause_type != ClauseType::Learned {
+            panic!(
+                "You can not remove a original clause from the formular only learned ones! \
+            and the clause with index {} is not learned: {:?}",
+                clause_index, &self.clauses[clause_index]
+            )
+        }
+        let clause = self.clauses.remove(clause_index);
+
+        for lit in &clause.literals {
+            let variables_index = (lit.abs() - 1) as usize;
+            if *lit > 0 {
+                // TODO there must be a better way, this is to fucking expensive !!
+                let index = self.variables[variables_index]
+                    .positive_occurrences
+                    .iter()
+                    .position(|&x| x == clause_index)
+                    .unwrap();
+                self.variables[variables_index]
+                    .positive_occurrences
+                    .remove(index);
+                // maybe the hashset lookup ist less expensive than the if statement ?
+                if *lit == clause.literals[clause.watched.0]
+                    || *lit == clause.literals[clause.watched.1]
+                {
+                    self.variables[variables_index]
+                        .watched_pos_occurrences
+                        .remove(&clause_index);
+                }
+            } else {
+                let index = self.variables[variables_index]
+                    .negative_occurrences
+                    .iter()
+                    .position(|&x| x == clause_index)
+                    .unwrap();
+                self.variables[variables_index]
+                    .negative_occurrences
+                    .remove(index);
+                if *lit == clause.literals[clause.watched.0]
+                    || *lit == clause.literals[clause.watched.1]
+                {
+                    self.variables[variables_index]
+                        .watched_neg_occurrences
+                        .remove(&clause_index);
+                }
+            }
+        }
+    }
     pub fn assigment_stack_is_empty(&self) -> bool {
         return self.assigment_stack.is_empty();
     }

@@ -1,4 +1,6 @@
-use crate::dpll::schemas::{Clause, Formula, FormulaResultType, HeuristicType, Value, Variable};
+use crate::dpll::schemas::{
+    Clause, ClauseType, Formula, FormulaResultType, HeuristicType, Value, Variable,
+};
 use log::warn;
 use plotters::backend::BitMapBackend;
 use plotters::chart::ChartBuilder;
@@ -91,7 +93,12 @@ impl Clause {
             watched = (0, 1);
         }
 
-        Self { literals, watched }
+        Self {
+            literals,
+            watched,
+            clause_type: ClauseType::Original,
+            activity: 0,
+        }
     }
 }
 
@@ -152,7 +159,7 @@ impl Formula {
             .enumerate()
             .map(|(index, _)| (index, 0.0))
             .collect::<Vec<(usize, f32)>>();
-
+        let original_clause_vector_length = clauses.len();
         Ok(Self {
             assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
@@ -161,6 +168,7 @@ impl Formula {
             result: FormulaResultType::Unknown,
             variables_index,
             heuristic_type: HeuristicType::None,
+            original_clause_vector_length,
         })
     }
 
