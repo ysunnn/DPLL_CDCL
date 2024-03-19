@@ -194,18 +194,20 @@ impl Formula {
 /// The implication graph struct
 ///
 /// Directed acyclic graph representing implications between assignments.
+/// Learning schema :the decision schemes
 pub(crate) struct ImplicationGraph {
+    // variable_index as key
     pub(crate) assignments: HashMap<usize, Assignment>,
-    pub(crate) edges: HashMap<(usize, usize), ImplicationReason>,
     // key(from, to) for variable index, variable index in assignment
-    pub(crate) conflict: Option<Clause>, // Clause that caused a conflict
+    pub(crate) edges: HashMap<(usize, usize), ImplicationReason>,
+    // Clause that caused a conflict
+    pub(crate) conflict: Option<Clause>,
 }
 
 impl ImplicationGraph {
     fn add_assignment(&mut self, assignment: Assignment) {
         self.assignments.insert(assignment.variable_index, assignment);
     }
-
     fn add_edge(&mut self, reason: ImplicationReason, from: usize, to: usize) {
         self.edges.insert((from, to), reason);
     }
@@ -237,7 +239,7 @@ impl ImplicationGraph {
         self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
         self.add_assignment(new_assignment);
     }
-    pub fn create_conflict_vertex(&mut self, formula: &mut Formula, variable_index: usize, bd: usize,) {
+    pub fn create_conflict_vertex(&mut self, formula: &mut Formula, variable_index: usize, bd: usize) {
         if self.assignments.contains_key(&variable_index) {
             self.assignments.remove(&variable_index);
         }
@@ -250,6 +252,52 @@ impl ImplicationGraph {
         self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].positive_occurrences);
         self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].negative_occurrences);
         self.add_assignment(empty_assignment);
+    }
+
+    // Depth-first search to find reachable vertices
+    fn dfs(graph: &ImplicationGraph, v_target: usize, is_branching: bool) -> HashSet<usize> {
+        let mut visited = HashSet::new();
+        let mut stack = vec![v_target];
+
+        while let Some(u) = stack.pop() {
+            visited.insert(u);
+            for &v in graph.assignments.keys() {
+                if !visited.contains(&v) && graph.edges.contains_key(&(u, v)) {
+                    stack.push(v);
+                }
+            }
+            if (is_branching && graph.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+                || (!is_branching && !graph.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+            {
+                visited.insert(u);
+            }
+        }
+
+        visited
+    }
+
+    // All branching vertices from which conflict clause can be reached.
+    fn find_branching_vertices(graph: &ImplicationGraph, v_target: usize) -> HashSet<usize> {
+        graph.dfs(graph, v_target, true)
+    }
+
+    // Vertices that are not branching vertices but are part of the conflict clause.
+    fn find_implied_vertices(graph: &ImplicationGraph, v_target: usize) -> HashSet<usize> {
+        graph.dfs(graph, v_target, false)
+    }
+
+    fn second_largest_branching_depth(graph: &ImplicationGraph, v_target: usize) -> Option<usize> {
+        let branching_depths = graph.dfs(graph, v_target);
+
+        // Find the second-largest branching depth
+        let mut depths: Vec<usize> = branching_depths.values().cloned().collect();
+        depths.sort_unstable_by(|a, b| b.cmp(a));
+
+        if depths.len() >= 2 {
+            Some(depths[1])
+        } else {
+            None
+        }
     }
 }
 
