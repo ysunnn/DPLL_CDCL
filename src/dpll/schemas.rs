@@ -143,7 +143,8 @@ pub struct Variable {
     pub(crate) positive_occurrences: Vec<usize>,
     pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
-    pub depth: usize,
+    pub assigment_depth: usize,
+}
 
 /// The assignment struct
 ///
@@ -153,7 +154,7 @@ pub struct Variable {
 pub struct Assignment {
     pub(crate) variable_index: usize,
     pub(crate) assigment_type: AssigmentType,
-    pub(crate) value: Value,
+    pub(crate) variable_value: Value,
     pub(crate) depth: usize,
 }
 
@@ -178,7 +179,7 @@ impl Formula {
         self.assigment_stack.pop()
     }
     pub fn assigment_stack_push(&mut self, assignment: Assignment) {
-        if assignment.value == Value::Null {
+        if assignment.variable_value == Value::Null {
             error!("Null value");
             panic!("Null value");
         }
@@ -233,7 +234,7 @@ impl ImplicationGraph {
             for &clause_index in occurrences {
                 for &literal in &formula.clauses[clause_index].literals {
                     let literal_index = (literal.abs() - 1) as usize;
-                    if &formula.variables[literal_index].depth <= &assignment.depth {
+                    if &formula.variables[literal_index].assigment_depth <= &assignment.depth {
                         graph.add_edge(ImplicationReason::LearnedClause(clause_index), Some(*assignment));
                     }
                 }
