@@ -1,7 +1,7 @@
+use crate::dpll::schemas::Value::Null;
 use clap::ValueEnum;
 use log::{debug, error};
 use std::collections::{HashMap, HashSet, VecDeque};
-use crate::dpll::schemas::Value::Null;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -308,7 +308,6 @@ impl Formula {
         return self.assigment_stack.is_empty();
     }
 }
-
 /// The implication graph struct
 ///
 /// Directed acyclic graph representing implications between assignments.
@@ -324,7 +323,8 @@ pub(crate) struct ImplicationGraph {
 
 impl ImplicationGraph {
     fn add_assignment(&mut self, assignment: Assignment) {
-        self.assignments.insert(assignment.variable_index, assignment);
+        self.assignments
+            .insert(assignment.variable_index, assignment);
     }
     fn add_edge(&mut self, reason: ImplicationReason, from: usize, to: usize) {
         self.edges.insert((from, to), reason);
@@ -341,8 +341,14 @@ impl ImplicationGraph {
         for &clause_index in occurrences {
             for &literal in &formula.clauses[clause_index].literals {
                 let var_index = (literal.abs() - 1) as usize;
-                if self.assignments.contains_key(&var_index) && &formula.variables[var_index].depth <= &assignment.depth {
-                    self.add_edge(ImplicationReason::LearnedClause(clause_index), var_index, assignment.variable_index);
+                if self.assignments.contains_key(&var_index)
+                    && &formula.variables[var_index].depth <= &assignment.depth
+                {
+                    self.add_edge(
+                        ImplicationReason::LearnedClause(clause_index),
+                        var_index,
+                        assignment.variable_index,
+                    );
                     debug!(target: "update_graph_for_unit_propagation", "new edge added from {} to {}",var_index, assignment.variable_index)
                 }
             }
@@ -351,13 +357,30 @@ impl ImplicationGraph {
     pub fn update_graph_for_branching(&mut self, new_assignment: Assignment) {
         self.add_assignment(new_assignment);
     }
-    pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
+    pub fn update_graph_for_unit_propagation(
+        &mut self,
+        formula: &mut Formula,
+        new_assignment: Assignment,
+    ) {
         let variable_index = new_assignment.variable_index;
-        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].positive_occurrences);
-        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.update_graph_for_occurrences(
+            formula,
+            &new_assignment,
+            &formula.variables[variable_index].positive_occurrences,
+        );
+        self.update_graph_for_occurrences(
+            formula,
+            &new_assignment,
+            &formula.variables[variable_index].negative_occurrences,
+        );
         self.add_assignment(new_assignment);
     }
-    pub fn create_conflict_vertex(&mut self, formula: &mut Formula, variable_index: usize, bd: usize) {
+    pub fn create_conflict_vertex(
+        &mut self,
+        formula: &mut Formula,
+        variable_index: usize,
+        bd: usize,
+    ) {
         if self.assignments.contains_key(&variable_index) {
             self.assignments.remove(&variable_index);
         }
@@ -367,8 +390,16 @@ impl ImplicationGraph {
             value: Null,
             depth: bd,
         };
-        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].positive_occurrences);
-        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.update_graph_for_occurrences(
+            formula,
+            &empty_assignment,
+            &formula.variables[variable_index].positive_occurrences,
+        );
+        self.update_graph_for_occurrences(
+            formula,
+            &empty_assignment,
+            &formula.variables[variable_index].negative_occurrences,
+        );
         self.add_assignment(empty_assignment);
     }
 
@@ -384,8 +415,16 @@ impl ImplicationGraph {
                     stack.push(v);
                 }
             }
-            if (is_branching && self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
-                || (!is_branching && !self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+            if (is_branching
+                && self
+                    .assignments
+                    .get(&u)
+                    .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+                || (!is_branching
+                    && !self
+                        .assignments
+                        .get(&u)
+                        .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
             {
                 visited.insert(u);
             }
@@ -408,9 +447,11 @@ impl ImplicationGraph {
         let mut conflict_clause_literal: Vec<i16> = Vec::new();
         for variable in branching_vertices {
             match self.assignments.get(&variable).unwrap().value {
-                Value::True => { conflict_clause_literal.push(-1 * ((variable + 1) as i16)) }
-                Value::False => { conflict_clause_literal.push((variable + 1) as i16) }
-                _ => { panic!("branching_vertices should have assigned values") }
+                Value::True => conflict_clause_literal.push(-1 * ((variable + 1) as i16)),
+                Value::False => conflict_clause_literal.push((variable + 1) as i16),
+                _ => {
+                    panic!("branching_vertices should have assigned values")
+                }
             }
         }
         conflict_clause_literal
@@ -431,4 +472,3 @@ impl ImplicationGraph {
         }
     }
 }
-

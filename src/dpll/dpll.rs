@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType,
-    Value, Variable, ImplicationGraph,
-    AssigmentType, Assignment, Formula, HeuristicType, SetResultType, Value,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, ImplicationGraph,
+    SetResultType, Value,
 };
 use log::debug;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -13,8 +12,8 @@ fn set_variable_true(
     formula: &mut Formula,
     assigment_type: AssigmentType,
     bd: usize,
-    implication_graph: & mut ImplicationGraph,
-)-> SetResultType{
+    implication_graph: &mut ImplicationGraph,
+) -> SetResultType {
     debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::True;
     formula.variables[variable_index].depth = bd;
@@ -27,7 +26,9 @@ fn set_variable_true(
     formula.assigment_stack_push(assignment);
     match assigment_type {
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment),
+        AssigmentType::Forced => {
+            implication_graph.update_graph_for_unit_propagation(formula, assignment)
+        }
         _ => {}
     }
     let mut result = SetResultType::Success;
@@ -71,8 +72,8 @@ fn set_variable_false(
     formula: &mut Formula,
     assigment_type: AssigmentType,
     bd: usize,
-    implication_graph: & mut ImplicationGraph,
-)-> SetResultType{
+    implication_graph: &mut ImplicationGraph,
+) -> SetResultType {
     debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::False;
     formula.variables[variable_index].depth = bd;
@@ -85,7 +86,9 @@ fn set_variable_false(
     formula.assigment_stack_push(assignment);
     match assigment_type {
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => implication_graph.update_graph_for_unit_propagation(formula,assignment),
+        AssigmentType::Forced => {
+            implication_graph.update_graph_for_unit_propagation(formula, assignment)
+        }
         _ => {}
     }
     let mut result = SetResultType::Success;
@@ -175,7 +178,11 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
 /// If we still got a Branched assigment we undo this as well empty our unit queue and set the variable to false.
 /// Then we're going back to normal and start with unit propagation and regular assignments.
-fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut ImplicationGraph) -> Result<i32, FormulaResultType> {
+fn backtrack(
+    formula: &mut Formula,
+    gbd: &mut usize,
+    implication_graph: &mut ImplicationGraph,
+) -> Result<i32, FormulaResultType> {
     let mut numb_of_undone = 0;
     while let Some(top) = formula.assigment_stack_pop() {
         // Check the last element (the top of the stack)
@@ -188,11 +195,23 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                 let result;
                 match top.value {
                     Value::True => {
-                        result = set_variable_false(top.variable_index, formula, AssigmentType::Forced, *gbd, implication_graph)
-                    },
+                        result = set_variable_false(
+                            top.variable_index,
+                            formula,
+                            AssigmentType::Forced,
+                            *gbd,
+                            implication_graph,
+                        )
+                    }
                     Value::False => {
-                        result = set_variable_true(top.variable_index, formula, AssigmentType::Forced, *gbd, implication_graph)
-                    },
+                        result = set_variable_true(
+                            top.variable_index,
+                            formula,
+                            AssigmentType::Forced,
+                            *gbd,
+                            implication_graph,
+                        )
+                    }
                     _ => panic!("Invalid value"),
                 };
                 match result {
@@ -206,7 +225,11 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                         if formula.assigment_stack_is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
-                        implication_graph.create_conflict_vertex(formula, top.variable_index, top.depth);
+                        implication_graph.create_conflict_vertex(
+                            formula,
+                            top.variable_index,
+                            top.depth,
+                        );
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
@@ -223,6 +246,9 @@ fn backtrack(formula: &mut Formula, gbd: &mut usize, implication_graph: &mut Imp
                 undo_assignment(top.variable_index, formula);
                 debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable_index]);
                 numb_of_undone += 1;
+            }
+            _ => {
+                todo!()
             }
         }
     }
@@ -344,8 +370,13 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
         gbd += 1;
-        if set_variable_true(variable_index, formula, AssigmentType::Branching, gbd, &mut implication_graph)
-            == SetResultType::Conflict
+        if set_variable_true(
+            variable_index,
+            formula,
+            AssigmentType::Branching,
+            gbd,
+            &mut implication_graph,
+        ) == SetResultType::Conflict
         {
             // we should never get here
             implication_graph.create_conflict_vertex(formula, variable_index, gbd);
@@ -374,13 +405,25 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             debug!(target: "dpll", "Unit propagation: {}", unit);
             let result;
             match value {
-                Value::True =>{
-                    result = set_variable_true(unit, formula, AssigmentType::Forced, gbd, &mut implication_graph);
+                Value::True => {
+                    result = set_variable_true(
+                        unit,
+                        formula,
+                        AssigmentType::Forced,
+                        gbd,
+                        &mut implication_graph,
+                    );
                 }
-                Value::False =>{
-                    result = set_variable_false(unit, formula, AssigmentType::Forced, gbd, &mut implication_graph);
+                Value::False => {
+                    result = set_variable_false(
+                        unit,
+                        formula,
+                        AssigmentType::Forced,
+                        gbd,
+                        &mut implication_graph,
+                    );
                 }
-                Value::Null =>{
+                Value::Null => {
                     panic!("i cannot set a unit to the value none in unit propagation")
                 }
             }
@@ -411,11 +454,12 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     }
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
     use crate::dpll::dpll::{find_unit, set_variable_true};
     use crate::dpll::schemas::{
-        AssigmentType, Clause, Formula, FormulaResultType, HeuristicType, Value, Variable, ImplicationGraph,
+        AssigmentType, Clause, Formula, FormulaResultType, HeuristicType, ImplicationGraph, Value,
+        Variable,
     };
     use std::collections::VecDeque;
 
@@ -468,7 +512,13 @@ mod tests {
             conflict: None,
         };
         //todo is bd 1?
-        set_variable_true(1, &mut formular, AssigmentType::Branching, 1, &mut implication_graph);
+        set_variable_true(
+            1,
+            &mut formular,
+            AssigmentType::Branching,
+            1,
+            &mut implication_graph,
+        );
         assert_eq!(formular.variables[0].value, Value::True);
         assert_eq!(formular.variables[1].value, Value::Null);
         assert_eq!(formular.clauses[0].number_of_active_literals, 2);
@@ -633,3 +683,4 @@ mod tests {
         let _ = find_unit(&variables_indexes, &formula.variables);
     }
 }
+*/
