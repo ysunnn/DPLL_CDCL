@@ -255,19 +255,19 @@ impl ImplicationGraph {
     }
 
     // Depth-first search to find reachable vertices
-    fn dfs(graph: &ImplicationGraph, v_target: usize, is_branching: bool) -> HashSet<usize> {
+    fn dfs(&mut self, v_target: usize, is_branching: bool) -> HashSet<usize> {
         let mut visited = HashSet::new();
         let mut stack = vec![v_target];
 
         while let Some(u) = stack.pop() {
             visited.insert(u);
-            for &v in graph.assignments.keys() {
-                if !visited.contains(&v) && graph.edges.contains_key(&(u, v)) {
+            for &v in self.assignments.keys() {
+                if !visited.contains(&v) && self.edges.contains_key(&(u, v)) {
                     stack.push(v);
                 }
             }
-            if (is_branching && graph.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
-                || (!is_branching && !graph.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+            if (is_branching && self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+                || (!is_branching && !self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
             {
                 visited.insert(u);
             }
@@ -277,20 +277,33 @@ impl ImplicationGraph {
     }
 
     // All branching vertices from which conflict clause can be reached.
-    fn find_branching_vertices(graph: &ImplicationGraph, v_target: usize) -> HashSet<usize> {
-        graph.dfs(graph, v_target, true)
+    fn find_branching_vertices(&mut self, v_target: usize) -> HashSet<usize> {
+        self.dfs(v_target, true)
     }
 
     // Vertices that are not branching vertices but are part of the conflict clause.
-    fn find_implied_vertices(graph: &ImplicationGraph, v_target: usize) -> HashSet<usize> {
-        graph.dfs(graph, v_target, false)
+    fn find_implied_vertices(&mut self, v_target: usize) -> HashSet<usize> {
+        self.dfs(v_target, false)
     }
 
-    fn second_largest_branching_depth(graph: &ImplicationGraph, v_target: usize) -> Option<usize> {
-        let branching_depths = graph.dfs(graph, v_target);
+    fn give_asserting_conflict_clause(&mut self, branching_vertices: HashSet<usize>) -> Vec<i16> {
+        let mut conflict_clause_literal: Vec<i16> = Vec::new();
+        for variable in branching_vertices {
+            match self.assignments.get(&variable).unwrap().value {
+                Value::True => { conflict_clause_literal.push(-1 * ((variable + 1) as i16)) }
+                Value::False => { conflict_clause_literal.push((variable + 1) as i16) }
+                _ => { panic!("branching_vertices should have assigned values") }
+            }
+        }
+        conflict_clause_literal
+    }
+
+    fn find_second_largest_branching_depth(&mut self, v_target: usize) -> Option<usize> {
+        let mut branching_depths = self.dfs(v_target, true);
+        branching_depths.extend(self.dfs(v_target, false));
 
         // Find the second-largest branching depth
-        let mut depths: Vec<usize> = branching_depths.values().cloned().collect();
+        let mut depths: Vec<usize> = branching_depths.into_iter().collect();
         depths.sort_unstable_by(|a, b| b.cmp(a));
 
         if depths.len() >= 2 {
