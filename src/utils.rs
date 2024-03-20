@@ -1,4 +1,6 @@
-use crate::dpll::schemas::{Clause, Formula, FormulaResultType, HeuristicType, Value, Variable};
+use crate::dpll::schemas::{
+    Clause, ClauseType, Formula, FormulaResultType, HeuristicType, Value, Variable,
+};
 use log::warn;
 use plotters::backend::BitMapBackend;
 use plotters::chart::ChartBuilder;
@@ -58,30 +60,44 @@ impl Clause {
         if literals.len() == 1 {
             let lit = literals[0];
             if lit > 0 {
-                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
-            watched = (0,0);
-        }else{
+            watched = (0, 0);
+        } else {
             let lit = literals[0];
             if lit > 0 {
-                variables[(literals[0].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[0].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[0].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
             let lit = literals[1];
             if lit > 0 {
-                variables[(literals[1].abs() - 1) as usize].watched_pos_occurrences.insert(clause_index);
-            }else {
-                variables[(literals[1].abs() - 1) as usize].watched_neg_occurrences.insert(clause_index);
+                variables[(literals[1].abs() - 1) as usize]
+                    .watched_pos_occurrences
+                    .insert(clause_index);
+            } else {
+                variables[(literals[1].abs() - 1) as usize]
+                    .watched_neg_occurrences
+                    .insert(clause_index);
             }
-            watched = (0,1);
+            watched = (0, 1);
         }
 
         Self {
             literals,
             watched,
+            clause_type: ClauseType::Original,
+            activity: 0,
         }
     }
 }
@@ -143,7 +159,7 @@ impl Formula {
             .enumerate()
             .map(|(index, _)| (index, 0.0))
             .collect::<Vec<(usize, f32)>>();
-
+        let original_clause_vector_length = clauses.len();
         Ok(Self {
             assigment_stack: Vec::with_capacity(variables.len()),
             clauses,
@@ -152,6 +168,7 @@ impl Formula {
             result: FormulaResultType::Unknown,
             variables_index,
             heuristic_type: HeuristicType::None,
+            original_clause_vector_length,
         })
     }
 

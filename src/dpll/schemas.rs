@@ -1,7 +1,7 @@
+use crate::dpll::schemas::Value::Null;
 use clap::ValueEnum;
 use log::{debug, error};
 use std::collections::{HashMap, HashSet, VecDeque};
-use crate::dpll::schemas::Value::Null;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -40,6 +40,11 @@ pub enum FormulaResultType {
     Satisfiable,
     Timeout,
 }
+#[derive(PartialEq, Debug)]
+pub enum ClauseType {
+    Original,
+    Learned,
+}
 
 pub enum ImplicationReason {
     Decision,
@@ -57,12 +62,17 @@ pub struct Clause {
     pub(crate) literals: Vec<i16>,
     // both watched are indexes to the literals of the clause
     pub(crate) watched: (usize, usize),
+    pub clause_type: ClauseType,
+    pub activity: u16,
 }
 
 impl Clause {
-    pub fn find_new_variable_to_watch(&mut self, variable_index: usize,
-                                      variables: &mut Vec<Variable>,
-                                      clause_index: usize) -> Result<Option<(usize, Value)>, i8> {
+    pub fn find_new_variable_to_watch(
+        &mut self,
+        variable_index: usize,
+        variables: &mut Vec<Variable>,
+        clause_index: usize,
+    ) -> Result<Option<(usize, Value)>, i8> {
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -74,17 +84,20 @@ impl Clause {
             other_watched_index = self.watched.0;
         }
         let mut maybe_unit = false;
+        let old_lit = self.literals[my_watched_index];
+        let old_lit_pos = old_lit > 0;
         debug!(target: "find_new_variable_to_watch", "num of literals: {}", self.literals.len());
-        for index in my_watched_index..self.literals.len() + my_watched_index {
-            let literal_index = index % self.literals.len();
+        for literal_index in 0..self.literals.len() {
             let lit = self.literals[literal_index];
             let variable = &mut variables[lit.abs() as usize - 1];
-            debug!(target: "find_new_variable_to_watch", "current index: {}", index);
             debug!(target: "find_new_variable_to_watch", "current literal_index: {}", literal_index);
             debug!(target: "find_new_variable_to_watch", "current lit: {}", lit);
             debug!(target: "find_new_variable_to_watch", "current variable: {:?}", variable);
             // satisfied clause dont play a role
-            if variable.value == Value::True && lit > 0 || variable.value == Value::False && lit < 0 {
+            let lit_pos = lit > 0;
+            let lit_neq = lit < 0;
+            if variable.value == Value::True && lit_pos || variable.value == Value::False && lit_neq
+            {
                 return Ok(None);
             }
 
@@ -100,17 +113,21 @@ impl Clause {
             }
             self.watched = (literal_index, other_watched_index);
             // Add the clause to the new variable that is watched
-            if lit > 0 {
+            if lit_pos {
                 variable.watched_pos_occurrences.insert(clause_index);
             } else {
                 variable.watched_neg_occurrences.insert(clause_index);
             }
-            let old_lit = self.literals[my_watched_index];
+
             // remove the clause from the old variable that is not watched anymore !
-            if old_lit > 0 {
-                variables[old_lit.abs() as usize - 1].watched_pos_occurrences.remove(&clause_index);
+            if old_lit_pos {
+                variables[old_lit.abs() as usize - 1]
+                    .watched_pos_occurrences
+                    .remove(&clause_index);
             } else {
-                variables[old_lit.abs() as usize - 1].watched_neg_occurrences.remove(&clause_index);
+                variables[old_lit.abs() as usize - 1]
+                    .watched_neg_occurrences
+                    .remove(&clause_index);
             }
             debug!(target: "find_new_variable_to_watch", "update watched variables: {:?}", self.watched);
             return Ok(None);
@@ -124,7 +141,10 @@ impl Clause {
             } else {
                 Value::False
             };
-            return Ok(Some((self.literals[other_watched_index].abs() as usize - 1, value)));
+            return Ok(Some((
+                self.literals[other_watched_index].abs() as usize - 1,
+                value,
+            )));
         }
         // conflict
         return Err(0);
@@ -172,6 +192,7 @@ pub struct Formula {
     pub(crate) result: FormulaResultType,
     pub(crate) variables_index: Vec<(usize, f32)>,
     pub heuristic_type: HeuristicType,
+    pub original_clause_vector_length: usize,
 }
 
 impl Formula {
@@ -186,11 +207,107 @@ impl Formula {
         self.assigment_stack.push(assignment);
     }
 
+    /// Add a new learned clause to the formular by a list of literates,
+    /// all dependent variables get updated accordingly.
+    pub fn add_clauses(&mut self, literals: Vec<i16>) {
+        // TODO remove for release only for testing
+        if literals.len() < 2 {
+            panic!(
+                "It doesnt make sense to add an clause that has only one literal ! {:?}",
+                literals
+            )
+        }
+        let clause_index = self.clauses.len();
+        // UPDATE all variables that appear in the new clause
+        // Do wee need to update all variables or only the watched ones ??
+        for lit in &literals {
+            let variables_index = (lit.abs() - 1) as usize;
+            if *lit > 0 {
+                self.variables[variables_index]
+                    .positive_occurrences
+                    .push(clause_index);
+                if *lit == literals[0] || *lit == literals[1] {
+                    self.variables[variables_index]
+                        .watched_pos_occurrences
+                        .insert(clause_index);
+                }
+            } else {
+                self.variables[variables_index]
+                    .negative_occurrences
+                    .push(clause_index);
+                if *lit == literals[0] || *lit == literals[1] {
+                    self.variables[variables_index]
+                        .watched_neg_occurrences
+                        .insert(clause_index);
+                }
+            }
+        }
+
+        let clause = Clause {
+            literals,
+            watched: (0, 1),
+            clause_type: ClauseType::Learned,
+            activity: 0,
+        };
+        self.clauses.push(clause);
+    }
+    /// Removes a learned clause from the formular by the clause index it panics if the index auf the
+    /// clauses points to an original clauses!
+    /// Also, the operation of deleting the clause index from the positive and negativ occurrences
+    /// are really expressive, we first have to find the index of the value to remove it ...
+    pub fn delete_clauses(&mut self, clause_index: usize) {
+        if self.clauses[clause_index].clause_type != ClauseType::Learned {
+            panic!(
+                "You can not remove a original clause from the formular only learned ones! \
+            and the clause with index {} is not learned: {:?}",
+                clause_index, &self.clauses[clause_index]
+            )
+        }
+        let clause = self.clauses.remove(clause_index);
+
+        for lit in &clause.literals {
+            let variables_index = (lit.abs() - 1) as usize;
+            if *lit > 0 {
+                // TODO there must be a better way, this is to fucking expensive !!
+                let index = self.variables[variables_index]
+                    .positive_occurrences
+                    .iter()
+                    .position(|&x| x == clause_index)
+                    .unwrap();
+                self.variables[variables_index]
+                    .positive_occurrences
+                    .remove(index);
+                // maybe the hashset lookup ist less expensive than the if statement ?
+                if *lit == clause.literals[clause.watched.0]
+                    || *lit == clause.literals[clause.watched.1]
+                {
+                    self.variables[variables_index]
+                        .watched_pos_occurrences
+                        .remove(&clause_index);
+                }
+            } else {
+                let index = self.variables[variables_index]
+                    .negative_occurrences
+                    .iter()
+                    .position(|&x| x == clause_index)
+                    .unwrap();
+                self.variables[variables_index]
+                    .negative_occurrences
+                    .remove(index);
+                if *lit == clause.literals[clause.watched.0]
+                    || *lit == clause.literals[clause.watched.1]
+                {
+                    self.variables[variables_index]
+                        .watched_neg_occurrences
+                        .remove(&clause_index);
+                }
+            }
+        }
+    }
     pub fn assigment_stack_is_empty(&self) -> bool {
         return self.assigment_stack.is_empty();
     }
 }
-
 /// The implication graph struct
 ///
 /// Directed acyclic graph representing implications between assignments.
@@ -206,7 +323,8 @@ pub(crate) struct ImplicationGraph {
 
 impl ImplicationGraph {
     fn add_assignment(&mut self, assignment: Assignment) {
-        self.assignments.insert(assignment.variable_index, assignment);
+        self.assignments
+            .insert(assignment.variable_index, assignment);
     }
     fn add_edge(&mut self, reason: ImplicationReason, from: usize, to: usize) {
         self.edges.insert((from, to), reason);
@@ -223,8 +341,14 @@ impl ImplicationGraph {
         for &clause_index in occurrences {
             for &literal in &formula.clauses[clause_index].literals {
                 let var_index = (literal.abs() - 1) as usize;
-                if self.assignments.contains_key(&var_index) && &formula.variables[var_index].depth <= &assignment.depth {
-                    self.add_edge(ImplicationReason::LearnedClause(clause_index), var_index, assignment.variable_index);
+                if self.assignments.contains_key(&var_index)
+                    && &formula.variables[var_index].depth <= &assignment.depth
+                {
+                    self.add_edge(
+                        ImplicationReason::LearnedClause(clause_index),
+                        var_index,
+                        assignment.variable_index,
+                    );
                     debug!(target: "update_graph_for_unit_propagation", "new edge added from {} to {}",var_index, assignment.variable_index)
                 }
             }
@@ -233,13 +357,30 @@ impl ImplicationGraph {
     pub fn update_graph_for_branching(&mut self, new_assignment: Assignment) {
         self.add_assignment(new_assignment);
     }
-    pub fn update_graph_for_unit_propagation(&mut self, formula: &mut Formula, new_assignment: Assignment) {
+    pub fn update_graph_for_unit_propagation(
+        &mut self,
+        formula: &mut Formula,
+        new_assignment: Assignment,
+    ) {
         let variable_index = new_assignment.variable_index;
-        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].positive_occurrences);
-        self.update_graph_for_occurrences(formula, &new_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.update_graph_for_occurrences(
+            formula,
+            &new_assignment,
+            &formula.variables[variable_index].positive_occurrences,
+        );
+        self.update_graph_for_occurrences(
+            formula,
+            &new_assignment,
+            &formula.variables[variable_index].negative_occurrences,
+        );
         self.add_assignment(new_assignment);
     }
-    pub fn create_conflict_vertex(&mut self, formula: &mut Formula, variable_index: usize, bd: usize) {
+    pub fn create_conflict_vertex(
+        &mut self,
+        formula: &mut Formula,
+        variable_index: usize,
+        bd: usize,
+    ) {
         if self.assignments.contains_key(&variable_index) {
             self.assignments.remove(&variable_index);
         }
@@ -249,8 +390,16 @@ impl ImplicationGraph {
             value: Null,
             depth: bd,
         };
-        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].positive_occurrences);
-        self.update_graph_for_occurrences(formula, &empty_assignment, &formula.variables[variable_index].negative_occurrences);
+        self.update_graph_for_occurrences(
+            formula,
+            &empty_assignment,
+            &formula.variables[variable_index].positive_occurrences,
+        );
+        self.update_graph_for_occurrences(
+            formula,
+            &empty_assignment,
+            &formula.variables[variable_index].negative_occurrences,
+        );
         self.add_assignment(empty_assignment);
     }
 
@@ -266,8 +415,16 @@ impl ImplicationGraph {
                     stack.push(v);
                 }
             }
-            if (is_branching && self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
-                || (!is_branching && !self.assignments.get(&u).map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+            if (is_branching
+                && self
+                    .assignments
+                    .get(&u)
+                    .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
+                || (!is_branching
+                    && !self
+                        .assignments
+                        .get(&u)
+                        .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
             {
                 visited.insert(u);
             }
@@ -290,9 +447,11 @@ impl ImplicationGraph {
         let mut conflict_clause_literal: Vec<i16> = Vec::new();
         for variable in branching_vertices {
             match self.assignments.get(&variable).unwrap().value {
-                Value::True => { conflict_clause_literal.push(-1 * ((variable + 1) as i16)) }
-                Value::False => { conflict_clause_literal.push((variable + 1) as i16) }
-                _ => { panic!("branching_vertices should have assigned values") }
+                Value::True => conflict_clause_literal.push(-1 * ((variable + 1) as i16)),
+                Value::False => conflict_clause_literal.push((variable + 1) as i16),
+                _ => {
+                    panic!("branching_vertices should have assigned values")
+                }
             }
         }
         conflict_clause_literal
@@ -313,4 +472,3 @@ impl ImplicationGraph {
         }
     }
 }
-

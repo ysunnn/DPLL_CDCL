@@ -66,10 +66,7 @@ fn bench(
 pub fn benchmark() {
     let mut data: Vec<(HeuristicType, Vec<Duration>)> = Vec::new();
     let mut out_total_counter = 0;
-    for heuristic in vec![
-        HeuristicType::None,
-        HeuristicType::VSIDS,
-    ] {
+    for heuristic in vec![HeuristicType::None, HeuristicType::VSIDS] {
         let paths = fs::read_dir("data/inputs").unwrap();
 
         let solved_counter = AtomicUsize::new(0);
