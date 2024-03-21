@@ -1,9 +1,9 @@
 use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, ImplicationGraph,
-    SetResultType, Value,
+    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType, Value,
 };
 use log::debug;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::empty;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,7 +12,6 @@ fn set_variable_true(
     formula: &mut Formula,
     assigment_type: AssigmentType,
     bd: usize,
-    implication_graph: &mut ImplicationGraph,
     clause_index: Option<usize>,
 ) -> SetResultType {
     debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
@@ -27,15 +26,6 @@ fn set_variable_true(
     };
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
-    match assigment_type {
-        AssigmentType::Branching => {
-            implication_graph.update_graph_for_branching(assignment);
-        }
-        AssigmentType::Forced => {
-            implication_graph.update_graph_for_unit_propagation(formula, assignment)
-        }
-        _ => {}
-    }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
     for clause_index in formula.variables[variable_index]
@@ -65,7 +55,6 @@ fn set_variable_true(
                 result = SetResultType::Conflict;
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
-                implication_graph.create_conflict_vertex(formula, variable_index, bd);
             }
         }
     }
@@ -77,7 +66,6 @@ fn set_variable_false(
     formula: &mut Formula,
     assigment_type: AssigmentType,
     bd: usize,
-    implication_graph: &mut ImplicationGraph,
     clause_index: Option<usize>,
 ) -> SetResultType {
     debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
@@ -92,13 +80,6 @@ fn set_variable_false(
     };
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
-    match assigment_type {
-        AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
-        AssigmentType::Forced => {
-            implication_graph.update_graph_for_unit_propagation(formula, assignment)
-        }
-        _ => {}
-    }
     let mut result = SetResultType::Success;
     debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
     for clause_index in formula.variables[variable_index]
@@ -126,7 +107,6 @@ fn set_variable_false(
             Err(_) => {
                 //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict;
-                implication_graph.create_conflict_vertex(formula, variable_index, bd);
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
             }
@@ -147,6 +127,73 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
     // maybe only remove variables after backtracking?
 }
 
+/// Depth-first search to find reachable vertices.
+fn dfs(
+    conflict_vertex: usize,
+    formula: &mut Formula,
+) -> Vec<usize> {
+    let mut stack = VecDeque::new();
+    let mut visited = vec![false; formula.variables.len()];
+    //todo should it be a set?
+    let mut reachable_vertices = Vec::new();
+
+    stack.push_back(conflict_vertex);
+    visited[conflict_vertex] = true;
+
+    while let Some(vertex) = stack.pop_back() {
+        reachable_vertices.push(vertex);
+
+        // Explore neighbors from positive_occurrences and negative_occurrences
+        for &clause_idx in formula.variables[vertex].positive_occurrences.iter().chain(formula.variables[vertex].negative_occurrences.iter()) {
+            let clause = &formula.clauses[clause_idx];
+            for &literal in &clause.literals {
+                let neighbor = if literal > 0 {
+                    literal as usize - 1
+                } else {
+                    (-literal) as usize - 1
+                };
+
+                if !visited[neighbor] {
+                    stack.push_back(neighbor);
+                    visited[neighbor] = true;
+                }
+            }
+        }
+    }
+    reachable_vertices
+}
+
+/// Cut based on decision scheme and add an asserting conflict clause.
+/// Find and give second-largest branching depth.
+fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> Option<usize> {
+    let reachable_vertices = dfs(conflict_vertex, formula);
+    let mut depths: Vec<usize> = Vec::new();
+    let mut conflict_clause_literal = Vec::new();  // All branching vertices from which conflict clause can be reached.
+    // let mut implied_vertices= Vec::new(); // Vertices that are not branching vertices but are part of the conflict clause.
+    for literal in reachable_vertices {
+        // All branching vertices from which conflict clause can be reached.
+        if formula.variables[literal - 1].reason == None {
+            match formula.variables[literal - 1].value {
+                Value::True => conflict_clause_literal.push(-1 * ((literal + 1) as i16)),
+                Value::False => conflict_clause_literal.push((literal + 1) as i16),
+                _ => {
+                    panic!("branching_vertices should have assigned values")
+                }
+            }
+        }
+        depths.push(formula.variables[literal - 1].depth)
+    }
+    formula.add_clauses(conflict_clause_literal);
+
+    // Find the second-largest branching depth
+    depths.sort_unstable_by(|a, b| b.cmp(a));
+    if depths.len() >= 2 {
+        Some(depths[1])
+    } else {
+        None
+    }
+}
+
 /// Backtrack the forced assigment
 ///
 /// First we undo all the Forced assignments, if the assignment stack get empty in this process the formula is unsat.
@@ -155,7 +202,6 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
 fn backtrack(
     formula: &mut Formula,
     gbd: &mut usize,
-    implication_graph: &mut ImplicationGraph,
 ) -> Result<i32, FormulaResultType> {
     let mut numb_of_undone = 0;
     while let Some(top) = formula.assigment_stack_pop() {
@@ -174,7 +220,6 @@ fn backtrack(
                             formula,
                             AssigmentType::Forced,
                             *gbd,
-                            implication_graph,
                             None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
                         )
                     }
@@ -184,7 +229,6 @@ fn backtrack(
                             formula,
                             AssigmentType::Forced,
                             *gbd,
-                            implication_graph,
                             None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
                         )
                     }
@@ -201,11 +245,6 @@ fn backtrack(
                         if formula.assigment_stack_is_empty() {
                             return Err(FormulaResultType::Unsatisfiable);
                         }
-                        implication_graph.create_conflict_vertex(
-                            formula,
-                            top.variable_index,
-                            top.depth,
-                        );
                         match formula.heuristic_type {
                             HeuristicType::VSIDS => {
                                 debug!("{:?}", formula.heuristic_type);
@@ -243,7 +282,7 @@ fn berk_mins_clause_deletion_strategies(formular: &mut Formula, threshold: u16) 
     // iterate over all new learned clauses
     let mut vec: Vec<usize> = Vec::with_capacity(diff);
     for (index, clause_index) in
-        (formular.original_clause_vector_length..formular.clauses.len()).enumerate()
+    (formular.original_clause_vector_length..formular.clauses.len()).enumerate()
     {
         let clause = &formular.clauses[clause_index];
         if index <= first_sixteentel {
@@ -307,13 +346,6 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut index = 0;
     // Global branching depth counter
     let mut gbd: usize = 0;
-
-    let mut implication_graph = ImplicationGraph {
-        assignments: HashMap::new(),
-        edges: HashMap::new(),
-        conflict: None,
-    };
-
     //scan_for_units(formula);
     //pure_literal_elimination(formula);
 
@@ -351,13 +383,11 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             formula,
             AssigmentType::Branching,
             gbd,
-            &mut implication_graph,
             None,
         ) == SetResultType::Conflict
         {
             // we should never get here
-            implication_graph.create_conflict_vertex(formula, variable_index, gbd);
-            match backtrack(formula, &mut gbd, &mut implication_graph) {
+            match backtrack(formula, &mut gbd) {
                 Ok(_) => {}
                 Err(result) => {
                     formula.result = result;
@@ -388,7 +418,6 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         formula,
                         AssigmentType::Forced,
                         gbd,
-                        &mut implication_graph,
                         Some(clause_index),
                     );
                 }
@@ -398,7 +427,6 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         formula,
                         AssigmentType::Forced,
                         gbd,
-                        &mut implication_graph,
                         Some(clause_index),
                     );
                 }
@@ -420,7 +448,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 
             debug!(target: "dpll", "Unit propagation failed: {:?}", result);
             // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-            match backtrack(formula, &mut gbd, &mut implication_graph) {
+            match backtrack(formula, &mut gbd) {
                 Ok(_) => {
                     index = 0;
                 }

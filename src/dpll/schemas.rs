@@ -24,7 +24,6 @@ pub enum HeuristicType {
 pub enum AssigmentType {
     Forced,
     Branching,
-    Null, // for conflict vertex
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -44,12 +43,6 @@ pub enum FormulaResultType {
 pub enum ClauseType {
     Original,
     Learned,
-}
-
-pub enum ImplicationReason {
-    Decision,
-    LearnedClause(usize),
-    Null,
 }
 
 /// The clause struct
@@ -166,6 +159,7 @@ pub struct Variable {
     pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
     pub depth: usize,
+    // None for branching and clauses index as usize for unit propagation trigger.
     pub reason: Option<usize>,
 }
 
@@ -308,169 +302,5 @@ impl Formula {
     }
     pub fn assigment_stack_is_empty(&self) -> bool {
         return self.assigment_stack.is_empty();
-    }
-}
-/// The implication graph struct
-///
-/// Directed acyclic graph representing implications between assignments.
-/// Learning schema :the decision schemes
-pub(crate) struct ImplicationGraph {
-    // variable_index as key
-    pub(crate) assignments: HashMap<usize, Assignment>,
-    // key(from, to) for variable index, variable index in assignment
-    pub(crate) edges: HashMap<(usize, usize), ImplicationReason>,
-    // Clause that caused a conflict
-    pub(crate) conflict: Option<Clause>,
-}
-
-impl ImplicationGraph {
-    fn add_assignment(&mut self, assignment: Assignment) {
-        self.assignments
-            .insert(assignment.variable_index, assignment);
-    }
-    fn add_edge(&mut self, reason: ImplicationReason, from: usize, to: usize) {
-        self.edges.insert((from, to), reason);
-    }
-    fn set_conflict(&mut self, clause: Clause) {
-        self.conflict = Some(clause);
-    }
-    fn update_graph_for_occurrences(
-        &mut self,
-        formula: &Formula,
-        assignment: &Assignment,
-        occurrences: &[usize],
-    ) {
-        for &clause_index in occurrences {
-            for &literal in &formula.clauses[clause_index].literals {
-                let var_index = (literal.abs() - 1) as usize;
-                if self.assignments.contains_key(&var_index)
-                    && &formula.variables[var_index].depth <= &assignment.depth
-                {
-                    self.add_edge(
-                        ImplicationReason::LearnedClause(clause_index),
-                        var_index,
-                        assignment.variable_index,
-                    );
-                    debug!(target: "update_graph_for_unit_propagation", "new edge added from {} to {}",var_index, assignment.variable_index)
-                }
-            }
-        }
-    }
-    pub fn update_graph_for_branching(&mut self, new_assignment: Assignment) {
-        self.add_assignment(new_assignment);
-    }
-    pub fn update_graph_for_unit_propagation(
-        &mut self,
-        formula: &mut Formula,
-        new_assignment: Assignment,
-    ) {
-        let variable_index = new_assignment.variable_index;
-        self.update_graph_for_occurrences(
-            formula,
-            &new_assignment,
-            &formula.variables[variable_index].positive_occurrences,
-        );
-        self.update_graph_for_occurrences(
-            formula,
-            &new_assignment,
-            &formula.variables[variable_index].negative_occurrences,
-        );
-        self.add_assignment(new_assignment);
-    }
-    pub fn create_conflict_vertex(
-        &mut self,
-        formula: &mut Formula,
-        variable_index: usize,
-        bd: usize,
-    ) {
-        if self.assignments.contains_key(&variable_index) {
-            self.assignments.remove(&variable_index);
-        }
-        let empty_assignment = Assignment {
-            variable_index,
-            assigment_type: AssigmentType::Null,
-            value: Null,
-            depth: bd,
-        };
-        self.update_graph_for_occurrences(
-            formula,
-            &empty_assignment,
-            &formula.variables[variable_index].positive_occurrences,
-        );
-        self.update_graph_for_occurrences(
-            formula,
-            &empty_assignment,
-            &formula.variables[variable_index].negative_occurrences,
-        );
-        self.add_assignment(empty_assignment);
-    }
-
-    // Depth-first search to find reachable vertices
-    fn dfs(&mut self, v_target: usize, is_branching: bool) -> HashSet<usize> {
-        let mut visited = HashSet::new();
-        let mut stack = vec![v_target];
-
-        while let Some(u) = stack.pop() {
-            visited.insert(u);
-            for &v in self.assignments.keys() {
-                if !visited.contains(&v) && self.edges.contains_key(&(u, v)) {
-                    stack.push(v);
-                }
-            }
-            if (is_branching
-                && self
-                    .assignments
-                    .get(&u)
-                    .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
-                || (!is_branching
-                    && !self
-                        .assignments
-                        .get(&u)
-                        .map_or(false, |a| a.assigment_type == AssigmentType::Branching))
-            {
-                visited.insert(u);
-            }
-        }
-
-        visited
-    }
-
-    // All branching vertices from which conflict clause can be reached.
-    fn find_branching_vertices(&mut self, v_target: usize) -> HashSet<usize> {
-        self.dfs(v_target, true)
-    }
-
-    // Vertices that are not branching vertices but are part of the conflict clause.
-    fn find_implied_vertices(&mut self, v_target: usize) -> HashSet<usize> {
-        self.dfs(v_target, false)
-    }
-
-    fn give_asserting_conflict_clause(&mut self, branching_vertices: HashSet<usize>) -> Vec<i16> {
-        let mut conflict_clause_literal: Vec<i16> = Vec::new();
-        for variable in branching_vertices {
-            match self.assignments.get(&variable).unwrap().value {
-                Value::True => conflict_clause_literal.push(-1 * ((variable + 1) as i16)),
-                Value::False => conflict_clause_literal.push((variable + 1) as i16),
-                _ => {
-                    panic!("branching_vertices should have assigned values")
-                }
-            }
-        }
-        conflict_clause_literal
-    }
-
-    fn find_second_largest_branching_depth(&mut self, v_target: usize) -> Option<usize> {
-        let mut branching_depths = self.dfs(v_target, true);
-        branching_depths.extend(self.dfs(v_target, false));
-
-        // Find the second-largest branching depth
-        let mut depths: Vec<usize> = branching_depths.into_iter().collect();
-        depths.sort_unstable_by(|a, b| b.cmp(a));
-
-        if depths.len() >= 2 {
-            Some(depths[1])
-        } else {
-            None
-        }
     }
 }
