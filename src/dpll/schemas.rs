@@ -1,7 +1,7 @@
 use crate::dpll::schemas::Value::Null;
 use clap::ValueEnum;
 use log::{debug, error};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Value {
@@ -28,7 +28,9 @@ pub enum AssigmentType {
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SetResultType {
-    Conflict,
+    Conflict{
+        depth: usize
+    },
     Success,
 }
 
@@ -206,13 +208,6 @@ impl Formula {
     /// Add a new learned clause to the formular by a list of literates,
     /// all dependent variables get updated accordingly.
     pub fn add_clauses(&mut self, literals: Vec<i16>) {
-        // TODO remove for release only for testing
-        if literals.len() < 2 {
-            panic!(
-                "It doesnt make sense to add an clause that has only one literal ! {:?}",
-                literals
-            )
-        }
         let clause_index = self.clauses.len();
         // UPDATE all variables that appear in the new clause
         // Do wee need to update all variables or only the watched ones ??
@@ -238,10 +233,20 @@ impl Formula {
                 }
             }
         }
+        let mut watched = (0, 1);
+        // TODO remove for release only for testing
+        if literals.len() < 2 {
+            watched = (0,0);
+
+            let lit = literals[0];
+            let value = if lit >0 {Value::True} else { Value::False };
+
+            self.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
+        }
 
         let clause = Clause {
             literals,
-            watched: (0, 1),
+            watched,
             clause_type: ClauseType::Learned,
             activity: 0,
         };

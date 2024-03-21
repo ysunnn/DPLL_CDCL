@@ -11,10 +11,10 @@ use std::{fs, time};
 pub fn test() {
     let start = time::Instant::now();
     //let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
-    let path = PathBuf::from("data/inputs/sample_c.txt");
+    let path = PathBuf::from("data/inputs/test\\sat\\tent4_4.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
-    formula.heuristic_type = HeuristicType::MOM;
+    formula.heuristic_type = HeuristicType::None;
     //formula.update_score();
     dpll::dpll(&mut formula, Arc::new(AtomicBool::new(false)));
 

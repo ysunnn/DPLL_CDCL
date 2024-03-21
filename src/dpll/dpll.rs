@@ -1,9 +1,8 @@
 use crate::dpll::schemas::{
     AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType, Value,
 };
-use log::debug;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::empty;
+use log::{debug, warn};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -52,7 +51,9 @@ fn set_variable_true(
             }
             Err(_) => {
                 //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-                result = SetResultType::Conflict;
+                result = SetResultType::Conflict {
+                    depth: analyse_conflict_with_decision_scheme(variable_index, formula)
+                };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
             }
@@ -106,7 +107,9 @@ fn set_variable_false(
             }
             Err(_) => {
                 //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-                result = SetResultType::Conflict;
+                result = SetResultType::Conflict {
+                    depth: analyse_conflict_with_decision_scheme(variable_index, formula)
+                };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
             }
@@ -121,6 +124,8 @@ fn set_variable_false(
 /// for every negative occurrences in a clause we update the number of active literals by one.
 fn undo_assignment(variable_index: usize, formula: &mut Formula) {
     formula.variables[variable_index].value = Value::Null;
+    formula.variables[variable_index].depth = 0;
+    formula.variables[variable_index].reason = None;
     // somewhere here we have to check the number of assigned variables for the clauses to delete
     // it if it's a learned one with a length greater than k and less than m literates are assigned.
     // what do we do when we have to remove it from the assigment stack?
@@ -141,6 +146,7 @@ fn dfs(
     visited[conflict_vertex] = true;
 
     while let Some(vertex) = stack.pop_back() {
+        debug!(target: "dfs", "current_index: {}", vertex);
         reachable_vertices.push(vertex);
 
         // Explore neighbors from positive_occurrences and negative_occurrences
@@ -165,32 +171,35 @@ fn dfs(
 
 /// Cut based on decision scheme and add an asserting conflict clause.
 /// Find and give second-largest branching depth.
-fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> Option<usize> {
+fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> usize {
     let reachable_vertices = dfs(conflict_vertex, formula);
     let mut depths: Vec<usize> = Vec::new();
     let mut conflict_clause_literal = Vec::new();  // All branching vertices from which conflict clause can be reached.
     // let mut implied_vertices= Vec::new(); // Vertices that are not branching vertices but are part of the conflict clause.
     for literal in reachable_vertices {
         // All branching vertices from which conflict clause can be reached.
-        if formula.variables[literal - 1].reason == None {
-            match formula.variables[literal - 1].value {
+        debug!(target: "analyse_conflict_with_decision_scheme", "literal: {}", literal);
+        if formula.variables[literal].reason == None {
+            match formula.variables[literal].value {
                 Value::True => conflict_clause_literal.push(-1 * ((literal + 1) as i16)),
                 Value::False => conflict_clause_literal.push((literal + 1) as i16),
                 _ => {
-                    panic!("branching_vertices should have assigned values")
+                    //panic!("branching_vertices should have assigned values")
+                    warn!(target: "analyse_conflict_with_decision_scheme", "branching_vertices should have assigned values");
                 }
             }
         }
-        depths.push(formula.variables[literal - 1].depth)
+        depths.push(formula.variables[literal].depth)
     }
+    debug!(target: "analyse_conflict_with_decision_scheme", "new clause to learn: {:?}", &conflict_clause_literal);
     formula.add_clauses(conflict_clause_literal);
 
     // Find the second-largest branching depth
     depths.sort_unstable_by(|a, b| b.cmp(a));
     if depths.len() >= 2 {
-        Some(depths[1])
+        depths[1]
     } else {
-        None
+        panic!("No depth makes no sense maybe unsat ?")
     }
 }
 
@@ -202,73 +211,31 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
 fn backtrack(
     formula: &mut Formula,
     gbd: &mut usize,
-) -> Result<i32, FormulaResultType> {
-    let mut numb_of_undone = 0;
+    /*not_reachable: Vec<usize>,*/
+    depth: usize,
+) -> Option<FormulaResultType> {
     while let Some(top) = formula.assigment_stack_pop() {
-        // Check the last element (the top of the stack)
-        match top.assigment_type {
-            AssigmentType::Branching => {
-                *gbd -= 1;
-                // unset the last branched variable
-                undo_assignment(top.variable_index, formula);
-                formula.units.clear();
-                let result;
-                match top.value {
-                    Value::True => {
-                        result = set_variable_false(
-                            top.variable_index,
-                            formula,
-                            AssigmentType::Forced,
-                            *gbd,
-                            None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
-                        )
-                    }
-                    Value::False => {
-                        result = set_variable_true(
-                            top.variable_index,
-                            formula,
-                            AssigmentType::Forced,
-                            *gbd,
-                            None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
-                        )
-                    }
-                    _ => panic!("Invalid value"),
-                };
-                match result {
-                    SetResultType::Success => {
-                        debug!(target: "backtrack", "Unset Success variable: {}", top.variable_index);
-                        //formula.update_score();
-                        return Ok(numb_of_undone);
-                    }
-                    SetResultType::Conflict => {
-                        debug!(target: "backtrack", "Unset Conflict variable: {}", top.variable_index);
-                        if formula.assigment_stack_is_empty() {
-                            return Err(FormulaResultType::Unsatisfiable);
-                        }
-                        match formula.heuristic_type {
-                            HeuristicType::VSIDS => {
-                                debug!("{:?}", formula.heuristic_type);
-                                formula.vsids_score(top.variable_index);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            AssigmentType::Forced => {
-                // Pop the element if the condition is met
-                debug!(target: "backtrack", "Undo assigment: {:?}", top);
-                undo_assignment(top.variable_index, formula);
-                debug!(target: "backtrack", "Assigment undone: {:?}", formula.variables[top.variable_index]);
-                numb_of_undone += 1;
-            }
-            _ => {
-                todo!()
-            }
+        // undo all assigment where the depth is bigger than the given depth
+        if top.depth > depth {
+            undo_assignment(top.variable_index, formula);
+            //continue;
+        }else {
+            *gbd = depth;
+            return None
         }
+        // undo all assigment where the depth is equal to the given depth and the assigment where forced
+        /*if top.depth == depth && top.assigment_type == AssigmentType::Forced {
+            undo_assignment(top.variable_index, formula);
+            continue;
+        }
+        // if we reach the assigment where the depths are equal and the AssignmentType is Branching we are done backtracking.
+        if top.depth == depth && top.assigment_type == AssigmentType::Branching {
+            *gbd = depth;
+            return None;
+        }*/
     }
     debug!(target: "backtrack", "Backtrack finished");
-    return Err(FormulaResultType::Unsatisfiable);
+    return Some(FormulaResultType::Unsatisfiable);
 }
 
 fn berk_mins_clause_deletion_strategies(formular: &mut Formula, threshold: u16) {
@@ -378,21 +345,16 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
         gbd += 1;
-        if set_variable_true(
-            variable_index,
-            formula,
-            AssigmentType::Branching,
-            gbd,
-            None,
-        ) == SetResultType::Conflict
-        {
-            // we should never get here
-            match backtrack(formula, &mut gbd) {
-                Ok(_) => {}
-                Err(result) => {
-                    formula.result = result;
-                    debug!("set_variable_true Backtrack failed: {:?}", &formula.result);
-                    return;
+        match set_variable_true(variable_index, formula, AssigmentType::Branching, gbd, None) {
+            SetResultType::Success => {}
+            SetResultType::Conflict { depth } => {
+                match backtrack(formula, &mut gbd, depth) {
+                    None => {}
+                    Some(result) => {
+                        formula.result = result;
+                        debug!("set_variable_true Backtrack failed: {:?}", &formula.result);
+                        return;
+                    }
                 }
             }
         }
@@ -434,27 +396,30 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                     panic!("i cannot set a unit to the value none in unit propagation")
                 }
             }
-            //pure_literal_elimination(formula);
-            //formula.update_score();
-            if result == SetResultType::Success {
-                continue;
-            }
-            match formula.heuristic_type {
-                HeuristicType::VSIDS => {
-                    formula.vsids_score(unit);
-                }
-                _ => {}
-            }
 
-            debug!(target: "dpll", "Unit propagation failed: {:?}", result);
-            // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-            match backtrack(formula, &mut gbd) {
-                Ok(_) => {
-                    index = 0;
+            match result {
+                SetResultType::Success => {
+                    continue;
                 }
-                Err(result) => {
-                    formula.result = result;
-                    return;
+                SetResultType::Conflict { depth } => {
+                    match formula.heuristic_type {
+                        HeuristicType::VSIDS => {
+                            formula.vsids_score(unit);
+                        }
+                        _ => {}
+                    }
+
+                    debug!(target: "dpll", "Unit propagation failed: {:?}", result);
+                    // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
+                    match backtrack(formula, &mut gbd, depth) {
+                        None => {
+                            index = 0;
+                        }
+                        Some(result) => {
+                            formula.result = result;
+                            return;
+                        }
+                    }
                 }
             }
         }
