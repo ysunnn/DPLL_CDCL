@@ -192,8 +192,8 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
                     warn!(target: "analyse_conflict_with_decision_scheme", "branching_vertices should have assigned values");
                 }
             }
+            depths.push(formula.variables[literal].depth)
         }
-        depths.push(formula.variables[literal].depth)
     }
     debug!(target: "analyse_conflict_with_decision_scheme", "new clause to learn: {:?}", &conflict_clause_literal);
     formula.add_clauses(conflict_clause_literal);
@@ -203,7 +203,7 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
     if depths.len() >= 2 {
         depths[1]
     } else {
-        panic!("No depth makes no sense maybe unsat ?")
+        0
     }
 }
 
@@ -308,6 +308,10 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
                 continue;
             }
             SetResultType::Conflict { depth } => {
+                if depth == 0 {
+                    formula.result = FormulaResultType::Unsatisfiable;
+                    return Some(FormulaResultType::Unsatisfiable);
+                }
                 match formula.heuristic_type {
                     HeuristicType::VSIDS => {
                         formula.vsids_score(unit);
@@ -416,11 +420,16 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         match set_variable_true(variable_index, formula, AssigmentType::Branching, None) {
             SetResultType::Success => {}
             SetResultType::Conflict { depth } => {
+                if depth == 0 {
+                    formula.result = FormulaResultType::Unsatisfiable;
+                    debug!(target: "dpll", "conflict depth is 0, {:?}", &formula.result);
+                    return;
+                }
                 match backtrack(formula, depth) {
                     None => {}
                     Some(result) => {
                         formula.result = result;
-                        debug!("set_variable_true Backtrack failed: {:?}", &formula.result);
+                        debug!(target: "dpll","set_variable_true Backtrack failed: {:?}", &formula.result);
                         return;
                     }
                 }
