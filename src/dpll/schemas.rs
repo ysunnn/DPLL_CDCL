@@ -72,7 +72,7 @@ impl Clause {
         variable_index: usize,
         variables: &mut Vec<Variable>,
         clause_index: usize,
-    ) -> Result<Option<(usize, Value)>, i8> {
+    ) -> Result<Option<(usize, Value, usize)>, i8> {
         let my_watched_index;
         let other_watched_index;
         debug!(target: "find_new_variable_to_watch", "watched: {:?}", self.watched);
@@ -144,6 +144,7 @@ impl Clause {
             return Ok(Some((
                 self.literals[other_watched_index].abs() as usize - 1,
                 value,
+                clause_index,
             )));
         }
         // conflict
@@ -165,6 +166,7 @@ pub struct Variable {
     pub(crate) negative_occurrences: Vec<usize>,
     pub score: f32,
     pub depth: usize,
+    pub reason: Option<usize>,
 }
 
 /// The assignment struct
@@ -187,7 +189,7 @@ pub struct Assignment {
 pub struct Formula {
     pub(crate) clauses: Vec<Clause>,
     pub(crate) variables: Vec<Variable>,
-    pub(crate) units: VecDeque<(usize, Value)>,
+    pub(crate) units: VecDeque<(usize, Value, usize)>,
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
     pub(crate) variables_index: Vec<(usize, f32)>,
@@ -200,7 +202,7 @@ impl Formula {
         self.assigment_stack.pop()
     }
     pub fn assigment_stack_push(&mut self, assignment: Assignment) {
-        if assignment.value == Value::Null {
+        if assignment.value == Null {
             error!("Null value");
             panic!("Null value");
         }

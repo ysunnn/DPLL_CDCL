@@ -13,10 +13,12 @@ fn set_variable_true(
     assigment_type: AssigmentType,
     bd: usize,
     implication_graph: &mut ImplicationGraph,
+    clause_index: Option<usize>,
 ) -> SetResultType {
     debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::True;
     formula.variables[variable_index].depth = bd;
+    formula.variables[variable_index].reason = clause_index;
     let assignment = Assignment {
         variable_index,
         assigment_type,
@@ -24,8 +26,11 @@ fn set_variable_true(
         depth: bd,
     };
     formula.assigment_stack_push(assignment);
+    //dbg!(&formula.assigment_stack);
     match assigment_type {
-        AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
+        AssigmentType::Branching => {
+            implication_graph.update_graph_for_branching(assignment);
+        }
         AssigmentType::Forced => {
             implication_graph.update_graph_for_unit_propagation(formula, assignment)
         }
@@ -73,10 +78,12 @@ fn set_variable_false(
     assigment_type: AssigmentType,
     bd: usize,
     implication_graph: &mut ImplicationGraph,
+    clause_index: Option<usize>,
 ) -> SetResultType {
     debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
     formula.variables[variable_index].value = Value::False;
     formula.variables[variable_index].depth = bd;
+    formula.variables[variable_index].reason = clause_index;
     let assignment = Assignment {
         variable_index,
         assigment_type,
@@ -84,6 +91,7 @@ fn set_variable_false(
         depth: bd,
     };
     formula.assigment_stack_push(assignment);
+    //dbg!(&formula.assigment_stack);
     match assigment_type {
         AssigmentType::Branching => implication_graph.update_graph_for_branching(assignment),
         AssigmentType::Forced => {
@@ -127,40 +135,6 @@ fn set_variable_false(
     return result;
 }
 
-/// Set a Variable from the formula true.
-///
-/// [`variable`](usize) is the variable number/name (starts with 1)
-/// [`formula`](Formula) is the complete formula we want to solve
-///
-/// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
-/// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
-/// clause we add the variables to the unit queue for unit propagation.
-/*fn set_variable_true(
-    variable: usize,
-    formula: &mut Formula,
-    assigment: AssigmentType,
-    bd: usize,
-) -> SetResultType {
-    set_variable(variable, formula, assigment, Value::True)
-}*/
-
-/// Set a Variable from the formula false.
-///
-/// [`variable`](usize) is the variable number/name (starts with 1)
-/// [`formula`](Formula) is the complete formula we want to solve
-///
-/// The callstack is updated with the given assigment, all the clause were the variable a peres positives are set satisfiable.
-/// For the negative occurrences the number of active literals is reduced and if there is only one active literal in the
-/// clause we add the variables to the unit queue for unit propagation.
-/*fn set_variable_false(
-    variable: usize,
-    formula: &mut Formula,
-    assigment: AssigmentType,
-    bd: usize,
-) -> SetResultType {
-    set_variable(variable, formula, assigment, Value::False)
-}*/
-
 /// Undo the assigment of a variable for backtracking.
 /// First wie set the variable to free. We update every clause where the variable occurrences positive and is sat though this
 /// variable. We set the clause to not sat.
@@ -201,6 +175,7 @@ fn backtrack(
                             AssigmentType::Forced,
                             *gbd,
                             implication_graph,
+                            None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
                         )
                     }
                     Value::False => {
@@ -210,6 +185,7 @@ fn backtrack(
                             AssigmentType::Forced,
                             *gbd,
                             implication_graph,
+                            None, // TODO this is forced because of backtracking we would need a clause but we need a new backtracking instead !!!
                         )
                     }
                     _ => panic!("Invalid value"),
@@ -376,6 +352,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
             AssigmentType::Branching,
             gbd,
             &mut implication_graph,
+            None,
         ) == SetResultType::Conflict
         {
             // we should never get here
@@ -395,7 +372,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         index = 0;
         // propagate the units that have to be true now
         // propagate the units that have to be true now
-        while let Some((unit, value)) = formula.units.pop_front() {
+        while let Some((unit, value, clause_index)) = formula.units.pop_front() {
             // Forced Assigment because of unit propagation !
             //let unit = formula.units.pop_front().unwrap();
             if formula.variables[unit].value != Value::Null {
@@ -412,6 +389,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         AssigmentType::Forced,
                         gbd,
                         &mut implication_graph,
+                        Some(clause_index),
                     );
                 }
                 Value::False => {
@@ -421,6 +399,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         AssigmentType::Forced,
                         gbd,
                         &mut implication_graph,
+                        Some(clause_index),
                     );
                 }
                 Value::Null => {

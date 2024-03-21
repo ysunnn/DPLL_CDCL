@@ -25,6 +25,7 @@ impl Variable {
             negative_occurrences: Vec::new(),
             score: 0.0,
             depth: 0,
+            reason: None,
         }
     }
 }
