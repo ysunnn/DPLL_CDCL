@@ -1,6 +1,6 @@
 use crate::dpll::schemas::Value::Null;
 use clap::ValueEnum;
-use log::{debug, error};
+use log::{debug, error, warn};
 use std::collections::{HashSet, VecDeque};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -28,7 +28,7 @@ pub enum AssigmentType {
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SetResultType {
-    Conflict{
+    Conflict {
         depth: usize
     },
     Success,
@@ -41,6 +41,7 @@ pub enum FormulaResultType {
     Satisfiable,
     Timeout,
 }
+
 #[derive(PartialEq, Debug)]
 pub enum ClauseType {
     Original,
@@ -87,17 +88,18 @@ impl Clause {
             let variable = &mut variables[lit.abs() as usize - 1];
             debug!(target: "find_new_variable_to_watch", "current literal_index: {}", literal_index);
             debug!(target: "find_new_variable_to_watch", "current lit: {}", lit);
-            debug!(target: "find_new_variable_to_watch", "current variable: {:?}", variable);
+            //debug!(target: "find_new_variable_to_watch", "current variable: {:?}", variable);
             // satisfied clause dont play a role
             let lit_pos = lit > 0;
             let lit_neq = lit < 0;
             if variable.value == Value::True && lit_pos || variable.value == Value::False && lit_neq
             {
+                debug!(target: "find_new_variable_to_watch", "clauses is already sat: {}={:?}",lit,  variable.value);
                 return Ok(None);
             }
 
             // if the variable is not free we're looking for the next on
-            if variable.value != Value::Null {
+            if variable.value != Null {
                 continue;
             }
             debug!(target: "find_new_variable_to_watch", "index: {}, other_watched_index: {}", literal_index, other_watched_index);
@@ -136,6 +138,8 @@ impl Clause {
             } else {
                 Value::False
             };
+            let variables_index = self.literals[other_watched_index].abs() as usize - 1;
+            debug!(target: "find_new_variable_to_watch", "new unit clause found!: {:?}, variable: {}", variables[variables_index], variables_index+1);
             return Ok(Some((
                 self.literals[other_watched_index].abs() as usize - 1,
                 value,
@@ -143,6 +147,7 @@ impl Clause {
             )));
         }
         // conflict
+        warn!(target: "find_new_variable_to_watch", "new conflict no free variable to watch!: {}", clause_index);
         return Err(0);
     }
 }
@@ -172,15 +177,15 @@ pub enum PureType {
 }
 
 impl Variable {
-pub(crate) fn is_pure(&self) -> Option<PureType> {
-    if self.positive_occurrences.len() == 0 {
-        Some(PureType::Negative)
-    } else if self.negative_occurrences.len() == 0 {
-        Some(PureType::Positive)
-    } else {
-        None
+    pub(crate) fn is_pure(&self) -> Option<PureType> {
+        if self.positive_occurrences.len() == 0 {
+            Some(PureType::Negative)
+        } else if self.negative_occurrences.len() == 0 {
+            Some(PureType::Positive)
+        } else {
+            None
+        }
     }
-}
 }
 
 
@@ -204,7 +209,7 @@ pub struct Assignment {
 pub struct Formula {
     pub(crate) clauses: Vec<Clause>,
     pub(crate) variables: Vec<Variable>,
-    pub(crate) units: VecDeque<(usize, Value, usize)>,
+    pub units: VecDeque<(usize, Value, usize)>,
     pub(crate) assigment_stack: Vec<Assignment>,
     pub(crate) result: FormulaResultType,
     pub(crate) variables_index: Vec<(usize, f32)>,
@@ -223,6 +228,14 @@ impl Formula {
             panic!("Null value");
         }
         self.assigment_stack.push(assignment);
+    }
+
+    pub fn unit_queue_push(&mut self, unit: (usize, Value, usize)) {
+        debug!(target: "unit_queue_push", "pushing unit to queue: {:?}",&unit);
+        if self.variables[unit.0].value != Null {
+            panic!("Unit ist all ready set to a value doesnt make sense in the unit que !!!: {:?}", &unit);
+        }
+        self.units.push_back(unit);
     }
 
     /// Add a new learned clause to the formular by a list of literates,
@@ -255,13 +268,35 @@ impl Formula {
         }
         let mut watched = (0, 1);
         // TODO remove for release only for testing
+        let mut free_watched: Vec<usize> = Vec::new();
+        for (index, lit) in literals.iter().enumerate() {
+            let variables_index = (lit.abs() - 1) as usize;
+            if self.variables[variables_index].value != Null {
+                debug!(target: "add_clauses", "literal: {}={:?}", lit,&self.variables[variables_index].value);
+                continue;
+            }
+            free_watched.push(index);
+        }
+        if free_watched.len() == 0 {
+            panic!("no free variable the new clauses!")
+        }
         if literals.len() < 2 {
-            watched = (0,0);
+            watched = (0, 0);
 
             let lit = literals[0];
-            let value = if lit >0 {Value::True} else { Value::False };
+            let value = if lit > 0 { Value::True } else { Value::False };
             self.units.clear();
             self.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
+        } else if free_watched.len() < 2 {
+            debug!(target: "add_clauses", "new added clauses is a unit clauses !!!");
+            watched = (free_watched[0], free_watched[0]);
+
+            let lit = literals[free_watched[0]];
+            let value = if lit > 0 { Value::True } else { Value::False };
+            self.units.clear();
+            self.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
+        } else {
+            watched = (free_watched[0], free_watched[1]);
         }
 
         let clause = Clause {

@@ -13,7 +13,7 @@ fn set_variable_true(
     if assigment_type == AssigmentType::Branching {
         formula.depth += 1;
     }
-    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, formula.depth);
+    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index+1, assigment_type, formula.depth);
     formula.variables[variable_index].value = Value::True;
     formula.variables[variable_index].depth = formula.depth;
     formula.variables[variable_index].reason = clause_index;
@@ -26,7 +26,7 @@ fn set_variable_true(
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
     let mut result = SetResultType::Success;
-    debug!(target: "set_variable_true","updating all negative occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
+    debug!(target: "set_variable_true","updating all negative watched occurrences: {:?}", formula.variables[variable_index].watched_neg_occurrences);
     for clause_index in formula.variables[variable_index]
         .watched_neg_occurrences
         .clone()
@@ -42,7 +42,7 @@ fn set_variable_true(
                 debug!(target: "set_variable_true","result for finding new watched variable clause {}, {:?}", clause_index, option);
                 match option {
                     Some(unit) => {
-                        formula.units.push_back(unit);
+                        formula.unit_queue_push(unit);
                     }
                     None => {
                         continue;
@@ -59,6 +59,7 @@ fn set_variable_true(
             }
         }
     }
+    debug!(target: "set_variable_true", "result of set variable is: {:?}", &result);
     return result;
 }
 
@@ -71,7 +72,7 @@ fn set_variable_false(
     if assigment_type == AssigmentType::Branching {
         formula.depth += 1;
     }
-    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, formula.depth);
+    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index+1, assigment_type, formula.depth);
     formula.variables[variable_index].value = Value::False;
     formula.variables[variable_index].depth = formula.depth;
     formula.variables[variable_index].reason = clause_index;
@@ -84,7 +85,7 @@ fn set_variable_false(
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
     let mut result = SetResultType::Success;
-    debug!(target: "set_variable_false","updating all positive occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
+    debug!(target: "set_variable_false","updating all positive watched occurrences: {:?}", formula.variables[variable_index].watched_pos_occurrences);
     for clause_index in formula.variables[variable_index]
         .watched_pos_occurrences
         .clone()
@@ -100,7 +101,7 @@ fn set_variable_false(
                 debug!(target: "set_variable_false","result for finding new watched variable clause {}, {:?}", clause_index, option);
                 match option {
                     Some(unit) => {
-                        formula.units.push_back(unit);
+                        formula.unit_queue_push(unit);
                     }
                     None => {
                         continue;
@@ -117,6 +118,7 @@ fn set_variable_false(
             }
         }
     }
+    debug!(target: "set_variable_false", "result of set variable is: {:?}", &result);
     return result;
 }
 
@@ -216,13 +218,18 @@ fn backtrack(
     formula: &mut Formula,
     depth: usize,
 ) -> Option<FormulaResultType> {
+    debug!(target: "backtrack", "backtracking everything that have a higher depth than: {}", depth);
+    debug!(target: "backtrack", "current_assigment_stack: {:?}", &formula.assigment_stack);
     while let Some(top) = formula.assigment_stack_pop() {
         // undo all assigment where the depth is bigger than the given depth
         if top.depth > depth {
+            debug!(target: "backtrack", "undo assigment: {:?}", &top);
             undo_assignment(top.variable_index, formula);
             //continue;
         } else {
+            debug!(target: "backtrack", "done backtracking assigment: {:?}", &top);
             formula.depth = depth;
+            formula.units.clear();
             return None;
         }
         // undo all assigment where the depth is equal to the given depth and the assigment where forced
@@ -276,7 +283,8 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
         // Forced Assigment because of unit propagation !
         //let unit = formula.units.pop_front().unwrap();
         if formula.variables[unit].value != Value::Null {
-            warn!(target: "unit_propagation", "Variable: {} is already set", unit);
+            //panic!("Variable: {} is already set", unit);
+            //warn!(target: "unit_propagation", "Variable: {} is already set", unit);
             continue;
         }
         debug!(target: "unit_propagation", "Unit propagation: {}", unit);
@@ -319,11 +327,14 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
                     _ => {}
                 }
 
-                debug!(target: "unit_propagation", "Unit propagation failed: {:?}", result);
+                debug!(target: "unit_propagation", "Unit propagation failed: {:?} backtracking again", result);
                 // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
                 match backtrack(formula, depth) {
-                    None => {}
+                    None => {
+                        debug!(target: "unit_propagation", "successful backtracked");
+                    }
                     Some(result) => {
+                        warn!(target: "unit_propagation", "unsuccessful backtracked: {:?}", &result);
                         formula.result = result;
                         return Some(result);
                     }
@@ -340,9 +351,7 @@ fn scan_for_units(formula: &mut Formula) {
             debug!(target: "scan_for_units", "unit found! {:?}", clause);
             let lit = clause.literals[clause.watched.0];
             let value = if lit > 0 { Value::True } else { Value::False };
-            formula
-                .units
-                .push_back(((lit.abs() - 1) as usize, value, clause_index));
+            formula.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
         }
     }
 }
@@ -390,6 +399,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
 
     pure_literal_elimination(formula);
     if formula.result == FormulaResultType::Unsatisfiable {
+        formula.result = FormulaResultType::Unsatisfiable;
         return;
     }
 
@@ -401,6 +411,8 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         }
         debug!("current variables index: {:?}", formula.variables_index);
         let variable_index = formula.variables_index[index].0;
+
+        berk_mins_clause_deletion_strategies(formula, 7);
 
         debug!(target: "dpll", "current variable index: {}", variable_index);
         if formula.variables[variable_index].value != Value::Null {
@@ -441,6 +453,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         index = 0;
         // propagate the units that have to be true now
         // propagate the units that have to be true now
+        debug!(target: "dpll", "time for unit propagation!");
         match unit_propagation(formula) {
             Some(_) => {
                 return;
