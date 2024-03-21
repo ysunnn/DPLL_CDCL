@@ -1,6 +1,6 @@
 use crate::dpll::schemas::{AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, SetResultType, Value};
 use log::{debug, warn};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -142,17 +142,18 @@ fn undo_assignment(variable_index: usize, formula: &mut Formula) {
 
 /// Depth-first search to find reachable vertices.
 fn dfs(
-    conflict_vertex: usize,
+    variable_index: usize,
     formula: &mut Formula,
 ) -> Vec<usize> {
     let mut stack = VecDeque::new();
     let mut visited = vec![false; formula.variables.len()];
     let mut reachable_vertices = Vec::new();
 
-    stack.push_back(conflict_vertex);
-    visited[conflict_vertex] = true;
+    stack.push_back(variable_index);
+    visited[variable_index] = true;
 
     while let Some(vertex) = stack.pop_back() {
+        debug!(target: "dfs", "current_index: {}", vertex);
         if formula.variables[vertex].value != Value::Null {
             reachable_vertices.push(vertex);
         }
@@ -174,9 +175,9 @@ fn dfs(
 
 /// Cut based on decision and 1UIP scheme and add an asserting conflict clause.
 /// Find and give second-largest branching depth.
-fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> (usize, Vec<i16>) {
-    let reachable_vertices = dfs(conflict_vertex, formula);
-    debug!(target: "analyse_conflict_with_decision_scheme", "conflict_vertex: {},reachable_vertices: {:?}",conflict_vertex, reachable_vertices);
+fn analyse_conflict_with_decision_scheme(variable_index: usize, formula: &mut Formula) -> (usize, Vec<i16>) {
+    let reachable_vertices = dfs(variable_index, formula);
+    debug!(target: "analyse_conflict_with_decision_scheme", "variable_index: {},reachable_vertices: {:?}",variable_index, reachable_vertices);
     let mut depths: Vec<usize> = Vec::new();
     let mut conflict_clause_literal = Vec::new();  // All branching vertices from which conflict clause can be reached.
     let mut max_decision_level: usize = 0;
@@ -187,7 +188,9 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
             max_decision_level = formula.variables[literal].depth;
         }
         // All branching vertices from which conflict clause can be reached.
+        debug!(target: "analyse_conflict_with_decision_scheme", "literal: {}", literal);
         if formula.variables[literal].reason == None {
+            debug!(target: "analyse_conflict_with_decision_scheme", "formula.variables[literal]: {:?}", formula.variables[literal]);
             match formula.variables[literal].value {
                 Value::True => conflict_clause_literal.push(-1 * ((literal + 1) as i16)),
                 Value::False => conflict_clause_literal.push((literal + 1) as i16),
@@ -213,9 +216,10 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
     });
 
     if uip_clause.len() == 1 {
+        warn!(target: "analyse_conflict_with_decision_scheme", "depth 0 !!");
         (0, uip_clause)
     } else {
-        (max_decision_level - 1, uip_clause)
+        (max_decision_level - 1, conflict_clause_literal)
     }
 }
 
@@ -238,8 +242,9 @@ fn backtrack(
             //continue;
         } else {
             debug!(target: "backtrack", "done backtracking assigment: {:?}", &top);
+            //dbg!(&formula.assigment_stack);
             formula.depth = depth;
-            formula.units.clear();
+            //formula.units.clear();
             return None;
         }
         // undo all assigment where the depth is equal to the given depth and the assigment where forced
@@ -349,7 +354,13 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
                         return Some(result);
                     }
                 }
-                formula.add_clauses(clause);
+                match formula.add_clauses(clause){
+                    Some(r) =>{
+                        formula.result = r;
+                        return Some(r);
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -456,7 +467,14 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         return;
                     }
                 }
-                formula.add_clauses(clause);
+                match formula.add_clauses(clause){
+                    None => {}
+                    Some(result) => {
+                        formula.result = result;
+                        debug!(target: "dpll","set_variable_true Backtrack failed: {:?}", &formula.result);
+                        return;
+                    }
+                }
             }
         }
         //pure_literal_elimination(formula);

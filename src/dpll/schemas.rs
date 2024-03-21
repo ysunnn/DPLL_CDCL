@@ -241,7 +241,7 @@ impl Formula {
 
     /// Add a new learned clause to the formular by a list of literates,
     /// all dependent variables get updated accordingly.
-    pub fn add_clauses(&mut self, literals: Vec<i16>) {
+    pub fn add_clauses(&mut self, literals: Vec<i16>) -> Option<FormulaResultType> {
         let clause_index = self.clauses.len();
         // UPDATE all variables that appear in the new clause
         // Do wee need to update all variables or only the watched ones ??
@@ -279,16 +279,9 @@ impl Formula {
             free_watched.push(index);
         }
         if free_watched.len() == 0 {
-            panic!("no free variable the new clauses!")
+            return Some(FormulaResultType::Unsatisfiable)
         }
-        if literals.len() < 2 {
-            watched = (0, 0);
-
-            let lit = literals[0];
-            let value = if lit > 0 { Value::True } else { Value::False };
-            self.units.clear();
-            self.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
-        } else if free_watched.len() < 2 {
+        if free_watched.len() < 2 {
             debug!(target: "add_clauses", "new added clauses is a unit clauses !!!");
             watched = (free_watched[0], free_watched[0]);
 
@@ -307,6 +300,7 @@ impl Formula {
             activity: 0,
         };
         self.clauses.push(clause);
+        return None
     }
     /// Removes a learned clause from the formular by the clause index it panics if the index auf the
     /// clauses points to an original clauses!

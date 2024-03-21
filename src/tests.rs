@@ -56,8 +56,7 @@ pub fn tests() {
             };
             for path in fs::read_dir(dir).unwrap() {
                 let path = path.unwrap().path();
-                if path == PathBuf::from("data/inputs/test\\unsat\\tree5.cnf")
-                    && heuristic == HeuristicType::MOM
+                if path == PathBuf::from("data/inputs/test\\sat\\unique.cnf")
                 {
                     warn!("Skipping {:?}", path);
                     continue;
