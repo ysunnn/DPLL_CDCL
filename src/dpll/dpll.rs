@@ -51,6 +51,7 @@ fn set_variable_true(
             }
             Err(_) => {
                 //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+                debug!(target: "set_variable_true","conflict at {}",variable_index);
                 result = SetResultType::Conflict {
                     depth: analyse_conflict_with_decision_scheme(variable_index, formula)
                 };
@@ -107,6 +108,7 @@ fn set_variable_false(
             }
             Err(_) => {
                 //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+                debug!(target: "set_variable_false","conflict at {}", variable_index);
                 result = SetResultType::Conflict {
                     depth: analyse_conflict_with_decision_scheme(variable_index, formula)
                 };
@@ -147,7 +149,9 @@ fn dfs(
 
     while let Some(vertex) = stack.pop_back() {
         debug!(target: "dfs", "current_index: {}", vertex);
-        reachable_vertices.push(vertex);
+        if formula.variables[vertex].value != Value::Null {
+            reachable_vertices.push(vertex);
+        }
 
         // Explore neighbors from positive_occurrences and negative_occurrences
         for &clause_idx in formula.variables[vertex].positive_occurrences.iter().chain(formula.variables[vertex].negative_occurrences.iter()) {
@@ -173,6 +177,7 @@ fn dfs(
 /// Find and give second-largest branching depth.
 fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> usize {
     let reachable_vertices = dfs(conflict_vertex, formula);
+    debug!(target: "analyse_conflict_with_decision_scheme", "conflict_vertex: {},reachable_vertices: {:?}",conflict_vertex, reachable_vertices);
     let mut depths: Vec<usize> = Vec::new();
     let mut conflict_clause_literal = Vec::new();  // All branching vertices from which conflict clause can be reached.
     // let mut implied_vertices= Vec::new(); // Vertices that are not branching vertices but are part of the conflict clause.
@@ -184,7 +189,6 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
                 Value::True => conflict_clause_literal.push(-1 * ((literal + 1) as i16)),
                 Value::False => conflict_clause_literal.push((literal + 1) as i16),
                 _ => {
-                    //panic!("branching_vertices should have assigned values")
                     warn!(target: "analyse_conflict_with_decision_scheme", "branching_vertices should have assigned values");
                 }
             }
@@ -219,9 +223,9 @@ fn backtrack(
         if top.depth > depth {
             undo_assignment(top.variable_index, formula);
             //continue;
-        }else {
+        } else {
             *gbd = depth;
-            return None
+            return None;
         }
         // undo all assigment where the depth is equal to the given depth and the assigment where forced
         /*if top.depth == depth && top.assigment_type == AssigmentType::Forced {
