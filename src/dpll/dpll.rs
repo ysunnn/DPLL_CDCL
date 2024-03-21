@@ -54,7 +54,7 @@ fn set_variable_true(
                 let (depth, clause) = analyse_conflict_with_decision_scheme(variable_index, formula);
                 result = SetResultType::Conflict {
                     depth,
-                    clause
+                    clause,
                 };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
@@ -115,7 +115,7 @@ fn set_variable_false(
                 let (depth, clause) = analyse_conflict_with_decision_scheme(variable_index, formula);
                 result = SetResultType::Conflict {
                     depth,
-                    clause
+                    clause,
                 };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
@@ -147,14 +147,12 @@ fn dfs(
 ) -> Vec<usize> {
     let mut stack = VecDeque::new();
     let mut visited = vec![false; formula.variables.len()];
-    //todo should it be a set?
     let mut reachable_vertices = Vec::new();
 
     stack.push_back(conflict_vertex);
     visited[conflict_vertex] = true;
 
     while let Some(vertex) = stack.pop_back() {
-        debug!(target: "dfs", "current_index: {}", vertex);
         if formula.variables[vertex].value != Value::Null {
             reachable_vertices.push(vertex);
         }
@@ -163,12 +161,7 @@ fn dfs(
         for &clause_idx in formula.variables[vertex].positive_occurrences.iter().chain(formula.variables[vertex].negative_occurrences.iter()) {
             let clause = &formula.clauses[clause_idx];
             for &literal in &clause.literals {
-                let neighbor = if literal > 0 {
-                    literal as usize - 1
-                } else {
-                    (-literal) as usize - 1
-                };
-
+                let neighbor = (literal.abs() - 1) as usize;
                 if !visited[neighbor] {
                     stack.push_back(neighbor);
                     visited[neighbor] = true;
@@ -179,17 +172,21 @@ fn dfs(
     reachable_vertices
 }
 
-/// Cut based on decision scheme and add an asserting conflict clause.
+/// Cut based on decision and 1UIP scheme and add an asserting conflict clause.
 /// Find and give second-largest branching depth.
 fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> (usize, Vec<i16>) {
     let reachable_vertices = dfs(conflict_vertex, formula);
     debug!(target: "analyse_conflict_with_decision_scheme", "conflict_vertex: {},reachable_vertices: {:?}",conflict_vertex, reachable_vertices);
     let mut depths: Vec<usize> = Vec::new();
     let mut conflict_clause_literal = Vec::new();  // All branching vertices from which conflict clause can be reached.
+    let mut max_decision_level: usize = 0;
     // let mut implied_vertices= Vec::new(); // Vertices that are not branching vertices but are part of the conflict clause.
+
     for literal in reachable_vertices {
+        if formula.variables[literal].depth > max_decision_level {
+            max_decision_level = formula.variables[literal].depth;
+        }
         // All branching vertices from which conflict clause can be reached.
-        debug!(target: "analyse_conflict_with_decision_scheme", "literal: {}", literal);
         if formula.variables[literal].reason == None {
             match formula.variables[literal].value {
                 Value::True => conflict_clause_literal.push(-1 * ((literal + 1) as i16)),
@@ -202,14 +199,23 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
         }
     }
     debug!(target: "analyse_conflict_with_decision_scheme", "new clause to learn: {:?}", &conflict_clause_literal);
-    //formula.add_clauses(conflict_clause_literal);
 
-    // Find the second-largest branching depth
-    depths.sort_unstable_by(|a, b| b.cmp(a));
-    if depths.len() >= 2 {
-        (depths[1], conflict_clause_literal)
+    let mut uip_clause = conflict_clause_literal.clone();
+
+    // Remove literals with decision level bigger than max decision level.
+    uip_clause.retain(|&literal| {
+        let decision_level = formula.assigment_stack
+            .iter()
+            .find(|&assignment| assignment.variable_index == (literal.abs() - 1) as usize)
+            .map(|assignment| assignment.depth)
+            .unwrap_or(0); // Default to 0 if not found
+        decision_level <= max_decision_level
+    });
+
+    if uip_clause.len() == 1 {
+        (0, uip_clause)
     } else {
-        (0, conflict_clause_literal)
+        (max_decision_level - 1, uip_clause)
     }
 }
 
@@ -521,12 +527,6 @@ mod tests {
             variables_index: vec![],
             heuristic_type: HeuristicType::None,
         };
-        let mut implication_graph = ImplicationGraph {
-            assignments: Vec::new(),
-            edges: Vec::new(),
-            conflict: None,
-        };
-        //todo is bd 1?
         set_variable_true(
             1,
             &mut formular,
