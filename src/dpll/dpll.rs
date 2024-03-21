@@ -1,6 +1,4 @@
-use crate::dpll::schemas::{
-    AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, SetResultType, Value,
-};
+use crate::dpll::schemas::{AssigmentType, Assignment, Formula, FormulaResultType, HeuristicType, PureType, SetResultType, Value};
 use log::{debug, warn};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,18 +8,20 @@ fn set_variable_true(
     variable_index: usize,
     formula: &mut Formula,
     assigment_type: AssigmentType,
-    bd: usize,
     clause_index: Option<usize>,
 ) -> SetResultType {
-    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
+    if assigment_type == AssigmentType::Branching {
+        formula.depth += 1;
+    }
+    debug!(target: "set_variable_true", "Set variable true: {} by: {:?}, current depth: {}", variable_index, assigment_type, formula.depth);
     formula.variables[variable_index].value = Value::True;
-    formula.variables[variable_index].depth = bd;
+    formula.variables[variable_index].depth = formula.depth;
     formula.variables[variable_index].reason = clause_index;
     let assignment = Assignment {
         variable_index,
         assigment_type,
         value: Value::True,
-        depth: bd,
+        depth: formula.depth,
     };
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
@@ -50,8 +50,7 @@ fn set_variable_true(
                 }
             }
             Err(_) => {
-                //warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-                debug!(target: "set_variable_true","conflict at {}",variable_index);
+                warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict {
                     depth: analyse_conflict_with_decision_scheme(variable_index, formula)
                 };
@@ -67,18 +66,20 @@ fn set_variable_false(
     variable_index: usize,
     formula: &mut Formula,
     assigment_type: AssigmentType,
-    bd: usize,
     clause_index: Option<usize>,
 ) -> SetResultType {
-    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, bd);
+    if assigment_type == AssigmentType::Branching {
+        formula.depth += 1;
+    }
+    debug!(target: "set_variable_false", "Set variable false: {} by: {:?}, current depth: {}", variable_index, assigment_type, formula.depth);
     formula.variables[variable_index].value = Value::False;
-    formula.variables[variable_index].depth = bd;
+    formula.variables[variable_index].depth = formula.depth;
     formula.variables[variable_index].reason = clause_index;
     let assignment = Assignment {
         variable_index,
         assigment_type,
         value: Value::True,
-        depth: bd,
+        depth: formula.depth,
     };
     formula.assigment_stack_push(assignment);
     //dbg!(&formula.assigment_stack);
@@ -107,8 +108,7 @@ fn set_variable_false(
                 }
             }
             Err(_) => {
-                //warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
-                debug!(target: "set_variable_false","conflict at {}", variable_index);
+                warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
                 result = SetResultType::Conflict {
                     depth: analyse_conflict_with_decision_scheme(variable_index, formula)
                 };
@@ -214,8 +214,6 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
 /// Then we're going back to normal and start with unit propagation and regular assignments.
 fn backtrack(
     formula: &mut Formula,
-    gbd: &mut usize,
-    /*not_reachable: Vec<usize>,*/
     depth: usize,
 ) -> Option<FormulaResultType> {
     while let Some(top) = formula.assigment_stack_pop() {
@@ -224,7 +222,7 @@ fn backtrack(
             undo_assignment(top.variable_index, formula);
             //continue;
         } else {
-            *gbd = depth;
+            formula.depth = depth;
             return None;
         }
         // undo all assigment where the depth is equal to the given depth and the assigment where forced
@@ -273,12 +271,74 @@ fn berk_mins_clause_deletion_strategies(formular: &mut Formula, threshold: u16) 
     }
 }
 
-/*fn scan_for_units(formula: &mut Formula) {
-    for clause in formula.clauses.iter() {
-        if clause.number_of_active_literals == 1 {
+fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
+    while let Some((unit, value, clause_index)) = formula.units.pop_front() {
+        // Forced Assigment because of unit propagation !
+        //let unit = formula.units.pop_front().unwrap();
+        if formula.variables[unit].value != Value::Null {
+            warn!(target: "unit_propagation", "Variable: {} is already set", unit);
+            continue;
+        }
+        debug!(target: "unit_propagation", "Unit propagation: {}", unit);
+        let result;
+        match value {
+            Value::True => {
+                result = set_variable_true(
+                    unit,
+                    formula,
+                    AssigmentType::Forced,
+                    Some(clause_index),
+                );
+            }
+            Value::False => {
+                result = set_variable_false(
+                    unit,
+                    formula,
+                    AssigmentType::Forced,
+                    Some(clause_index),
+                );
+            }
+            Value::Null => {
+                panic!("i cannot set a unit to the value none in unit propagation")
+            }
+        }
+
+        match result {
+            SetResultType::Success => {
+                continue;
+            }
+            SetResultType::Conflict { depth } => {
+                match formula.heuristic_type {
+                    HeuristicType::VSIDS => {
+                        formula.vsids_score(unit);
+                    }
+                    _ => {}
+                }
+
+                debug!(target: "unit_propagation", "Unit propagation failed: {:?}", result);
+                // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
+                match backtrack(formula, depth) {
+                    None => {}
+                    Some(result) => {
+                        formula.result = result;
+                        return Some(result);
+                    }
+                }
+            }
+        }
+    }
+    return None;
+}
+
+fn scan_for_units(formula: &mut Formula) {
+    for (clause_index, clause) in formula.clauses.iter().enumerate() {
+        if clause.watched.0 == clause.watched.1 {
+            debug!(target: "scan_for_units", "unit found! {:?}", clause);
+            let lit = clause.literals[clause.watched.0];
+            let value = if lit > 0 { Value::True } else { Value::False };
             formula
                 .units
-                .push_back(find_unit(&clause.literals, &formula.variables));
+                .push_back(((lit.abs() - 1) as usize, value, clause_index));
         }
     }
 }
@@ -297,12 +357,13 @@ fn pure_literal_elimination(formula: &mut Formula) {
             Some(pure) => {
                 debug!("Pure positive: {}", variable_index + 1);
                 let value = match pure {
-                    PureType::Positive => Value::True,
-                    PureType::Negative => Value::False,
+                    PureType::Positive => set_variable_true(variable_index + 1, formula, AssigmentType::Branching, None),
+                    PureType::Negative => set_variable_false(variable_index + 1, formula, AssigmentType::Branching, None),
                 };
-                match set_variable(variable_index + 1, formula, AssigmentType::Branching, value) {
+                match value {
                     SetResultType::Success => {}
-                    SetResultType::Conflict => {
+                    SetResultType::Conflict { depth } => {
+                        warn!(target: "pure_literal_elimination", "formular unsat in depth: {}", depth);
                         formula.result = FormulaResultType::Unsatisfiable;
                         return;
                     }
@@ -311,15 +372,19 @@ fn pure_literal_elimination(formula: &mut Formula) {
             None => {}
         }
     }
-}*/
+}
 
 pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
     let mut index = 0;
-    // Global branching depth counter
-    let mut gbd: usize = 0;
-    //scan_for_units(formula);
-    //pure_literal_elimination(formula);
+    scan_for_units(formula);
+    match unit_propagation(formula) {
+        Some(_) => {
+            return;
+        }
+        _ => {}
+    }
 
+    pure_literal_elimination(formula);
     if formula.result == FormulaResultType::Unsatisfiable {
         return;
     }
@@ -348,11 +413,10 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // Branching type because we decided freely to set this variable!
         // theoretically we can ignore the result is the set variable true here, because a conflict can only occur if
         // we set variables though unit propagation.
-        gbd += 1;
-        match set_variable_true(variable_index, formula, AssigmentType::Branching, gbd, None) {
+        match set_variable_true(variable_index, formula, AssigmentType::Branching, None) {
             SetResultType::Success => {}
             SetResultType::Conflict { depth } => {
-                match backtrack(formula, &mut gbd, depth) {
+                match backtrack(formula, depth) {
                     None => {}
                     Some(result) => {
                         formula.result = result;
@@ -368,64 +432,11 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         index = 0;
         // propagate the units that have to be true now
         // propagate the units that have to be true now
-        while let Some((unit, value, clause_index)) = formula.units.pop_front() {
-            // Forced Assigment because of unit propagation !
-            //let unit = formula.units.pop_front().unwrap();
-            if formula.variables[unit].value != Value::Null {
-                debug!(target: "dpll", "Variable: {} is already set", variable_index + 1);
-                continue;
+        match unit_propagation(formula) {
+            Some(_) => {
+                return;
             }
-            debug!(target: "dpll", "Unit propagation: {}", unit);
-            let result;
-            match value {
-                Value::True => {
-                    result = set_variable_true(
-                        unit,
-                        formula,
-                        AssigmentType::Forced,
-                        gbd,
-                        Some(clause_index),
-                    );
-                }
-                Value::False => {
-                    result = set_variable_false(
-                        unit,
-                        formula,
-                        AssigmentType::Forced,
-                        gbd,
-                        Some(clause_index),
-                    );
-                }
-                Value::Null => {
-                    panic!("i cannot set a unit to the value none in unit propagation")
-                }
-            }
-
-            match result {
-                SetResultType::Success => {
-                    continue;
-                }
-                SetResultType::Conflict { depth } => {
-                    match formula.heuristic_type {
-                        HeuristicType::VSIDS => {
-                            formula.vsids_score(unit);
-                        }
-                        _ => {}
-                    }
-
-                    debug!(target: "dpll", "Unit propagation failed: {:?}", result);
-                    // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
-                    match backtrack(formula, &mut gbd, depth) {
-                        None => {
-                            index = 0;
-                        }
-                        Some(result) => {
-                            formula.result = result;
-                            return;
-                        }
-                    }
-                }
-            }
+            _ => {}
         }
     }
 }

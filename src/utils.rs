@@ -170,6 +170,7 @@ impl Formula {
             variables_index,
             heuristic_type: HeuristicType::None,
             original_clause_vector_length,
+            depth: 0,
         })
     }
 

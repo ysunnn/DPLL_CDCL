@@ -34,7 +34,7 @@ pub enum SetResultType {
     Success,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum FormulaResultType {
     Unknown,
     Unsatisfiable,
@@ -165,6 +165,25 @@ pub struct Variable {
     pub reason: Option<usize>,
 }
 
+#[derive(Debug)]
+pub enum PureType {
+    Positive,
+    Negative,
+}
+
+impl Variable {
+pub(crate) fn is_pure(&self) -> Option<PureType> {
+    if self.positive_occurrences.len() == 0 {
+        Some(PureType::Negative)
+    } else if self.negative_occurrences.len() == 0 {
+        Some(PureType::Positive)
+    } else {
+        None
+    }
+}
+}
+
+
 /// The assignment struct
 ///
 /// Contains the variable and the value that was assigned to it.
@@ -191,6 +210,7 @@ pub struct Formula {
     pub(crate) variables_index: Vec<(usize, f32)>,
     pub heuristic_type: HeuristicType,
     pub original_clause_vector_length: usize,
+    pub depth: usize,
 }
 
 impl Formula {
@@ -240,7 +260,7 @@ impl Formula {
 
             let lit = literals[0];
             let value = if lit >0 {Value::True} else { Value::False };
-
+            self.units.clear();
             self.units.push_back(((lit.abs() - 1) as usize, value, clause_index));
         }
 
