@@ -11,7 +11,7 @@ use std::{fs, time};
 pub fn test() {
     let start = time::Instant::now();
     //let path = PathBuf::from("data/inputs/test\\sat\\count4_2.cnf");
-    let path = PathBuf::from("data/inputs/test\\sat\\hole3_3.cnf");
+    let path = PathBuf::from("data/inputs/test\\sat\\unique.cnf");
     info!("Formula {:?}", path);
     let mut formula = Formula::from_file(&PathBuf::from(path)).unwrap();
     formula.heuristic_type = HeuristicType::None;

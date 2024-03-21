@@ -26,10 +26,11 @@ pub enum AssigmentType {
     Branching,
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Debug)]
 pub enum SetResultType {
     Conflict {
-        depth: usize
+        depth: usize,
+        clause: Vec<i16>
     },
     Success,
 }

@@ -51,8 +51,10 @@ fn set_variable_true(
             }
             Err(_) => {
                 warn!(target: "set_variable_true","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+                let (depth, clause) = analyse_conflict_with_decision_scheme(variable_index, formula);
                 result = SetResultType::Conflict {
-                    depth: analyse_conflict_with_decision_scheme(variable_index, formula)
+                    depth,
+                    clause
                 };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
@@ -110,8 +112,10 @@ fn set_variable_false(
             }
             Err(_) => {
                 warn!(target: "set_variable_false","conflict fore clause: {:?} index: {}", formula.clauses[*clause_index], clause_index);
+                let (depth, clause) = analyse_conflict_with_decision_scheme(variable_index, formula);
                 result = SetResultType::Conflict {
-                    depth: analyse_conflict_with_decision_scheme(variable_index, formula)
+                    depth,
+                    clause
                 };
                 // Update clauses activity for BerkMin's
                 formula.clauses[*clause_index].activity += 1;
@@ -177,7 +181,7 @@ fn dfs(
 
 /// Cut based on decision scheme and add an asserting conflict clause.
 /// Find and give second-largest branching depth.
-fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> usize {
+fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut Formula) -> (usize, Vec<i16>) {
     let reachable_vertices = dfs(conflict_vertex, formula);
     debug!(target: "analyse_conflict_with_decision_scheme", "conflict_vertex: {},reachable_vertices: {:?}",conflict_vertex, reachable_vertices);
     let mut depths: Vec<usize> = Vec::new();
@@ -198,14 +202,14 @@ fn analyse_conflict_with_decision_scheme(conflict_vertex: usize, formula: &mut F
         }
     }
     debug!(target: "analyse_conflict_with_decision_scheme", "new clause to learn: {:?}", &conflict_clause_literal);
-    formula.add_clauses(conflict_clause_literal);
+    //formula.add_clauses(conflict_clause_literal);
 
     // Find the second-largest branching depth
     depths.sort_unstable_by(|a, b| b.cmp(a));
     if depths.len() >= 2 {
-        depths[1]
+        (depths[1], conflict_clause_literal)
     } else {
-        0
+        (0, conflict_clause_literal)
     }
 }
 
@@ -315,7 +319,7 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
             SetResultType::Success => {
                 continue;
             }
-            SetResultType::Conflict { depth } => {
+            SetResultType::Conflict { depth, clause } => {
                 if depth == 0 {
                     formula.result = FormulaResultType::Unsatisfiable;
                     return Some(FormulaResultType::Unsatisfiable);
@@ -327,7 +331,7 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
                     _ => {}
                 }
 
-                debug!(target: "unit_propagation", "Unit propagation failed: {:?} backtracking again", result);
+                debug!(target: "unit_propagation", "Unit propagation failed backtracking again");
                 // after backtracking the unit queue should be empty. so we're exiting the loop automatically.
                 match backtrack(formula, depth) {
                     None => {
@@ -339,6 +343,7 @@ fn unit_propagation(formula: &mut Formula) -> Option<FormulaResultType> {
                         return Some(result);
                     }
                 }
+                formula.add_clauses(clause);
             }
         }
     }
@@ -375,8 +380,8 @@ fn pure_literal_elimination(formula: &mut Formula) {
                 };
                 match value {
                     SetResultType::Success => {}
-                    SetResultType::Conflict { depth } => {
-                        warn!(target: "pure_literal_elimination", "formular unsat in depth: {}", depth);
+                    SetResultType::Conflict { depth, clause } => {
+                        warn!(target: "pure_literal_elimination", "formular unsat in depth: {}, clause: {:?}", depth, clause);
                         formula.result = FormulaResultType::Unsatisfiable;
                         return;
                     }
@@ -431,7 +436,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
         // we set variables though unit propagation.
         match set_variable_true(variable_index, formula, AssigmentType::Branching, None) {
             SetResultType::Success => {}
-            SetResultType::Conflict { depth } => {
+            SetResultType::Conflict { depth, clause } => {
                 if depth == 0 {
                     formula.result = FormulaResultType::Unsatisfiable;
                     debug!(target: "dpll", "conflict depth is 0, {:?}", &formula.result);
@@ -445,6 +450,7 @@ pub fn dpll(formula: &mut Formula, timeout: Arc<AtomicBool>) {
                         return;
                     }
                 }
+                formula.add_clauses(clause);
             }
         }
         //pure_literal_elimination(formula);
